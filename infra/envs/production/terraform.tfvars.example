@@ -1,0 +1,15 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored and must never be committed with real
+# account details.
+
+# UNRESOLVED — verify against a live Huawei Cloud account before setting.
+# The Terraform-usable identifier for Huawei Cloud's Nigeria region has not
+# been confirmed. The values below are placeholders only, not a decision.
+region             = "REPLACE_ME"
+availability_zone  = "REPLACE_ME"
+
+vpc_cidr        = "10.20.0.0/16"
+cce_subnet_cidr = "10.20.1.0/24"
+rds_subnet_cidr = "10.20.2.0/24"
+
+enterprise_project_id = null
