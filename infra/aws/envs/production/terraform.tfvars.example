@@ -1,0 +1,28 @@
+# Copy this file to terraform.tfvars and adjust if needed.
+# terraform.tfvars is gitignored and must never be committed with real
+# account details. No credentials belong in this file at all — RDS's
+# master password is managed entirely by AWS Secrets Manager (see
+# infra/aws/modules/rds/main.tf).
+#
+# This environment exists structurally but MUST NOT be deployed — see
+# infra/CLOUD_STRATEGY.md. Huawei Cloud remains the intended production
+# target.
+
+aws_region = "us-east-1"
+azs        = ["us-east-1a", "us-east-1b"]
+
+vpc_cidr = "10.40.0.0/16"
+
+kubernetes_version = "1.31"
+
+node_instance_type = "t3.medium"
+node_desired_size  = 2
+node_min_size      = 1
+node_max_size      = 3
+
+rds_engine_version    = "16"
+rds_instance_class    = "db.t3.micro"
+rds_allocated_storage = 20
+
+rds_multi_az                = false
+rds_backup_retention_period = 1

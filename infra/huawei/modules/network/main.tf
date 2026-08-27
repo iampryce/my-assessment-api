@@ -150,6 +150,78 @@ resource "huaweicloud_networking_secgroup_rule" "cce_egress_all" {
 }
 
 # ---------------------------------------------------------------------------
+# CCE node-to-node ingress rules (Phase 2B) — required for basic cluster
+# networking under the overlay_l2 (tunnel network) container network model.
+#
+# Verified against Huawei's own documented security-group rule table for
+# tunnel-network worker nodes before writing these
+# (https://support.huaweicloud.com/intl/en-us/cce_faq/cce_faq_00265.html):
+#
+#   UDP/4789        0.0.0.0/0        container-to-container VXLAN traffic
+#   TCP/10250       master node CIDR kubelet access from the control plane
+#   TCP+UDP/30000-32767  0.0.0.0/0   NodePort Services
+#   TCP/22          0.0.0.0/0        SSH (Huawei's own guidance recommends
+#                                    restricting this)
+#
+# SSH (port 22) is deliberately NOT opened here: this architecture manages
+# nodes via kubectl/Argo CD, not direct SSH, and Huawei's own documentation
+# recommends restricting that rule rather than leaving it open by default.
+#
+# None of these rules expose anything to the public internet in practice —
+# CCE worker nodes in this design never receive a public IP (see the NAT
+# section above), so "0.0.0.0/0" here only matters for traffic that already
+# reached a private interface via the VPC/NAT path.
+# ---------------------------------------------------------------------------
+
+resource "huaweicloud_networking_secgroup_rule" "cce_vxlan_ingress" {
+  security_group_id = huaweicloud_networking_secgroup.cce.id
+
+  direction        = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "udp"
+  port_range_min   = 4789
+  port_range_max   = 4789
+  remote_ip_prefix = "0.0.0.0/0"
+  description      = "Container-to-container VXLAN traffic (overlay_l2 tunnel network)"
+}
+
+resource "huaweicloud_networking_secgroup_rule" "cce_kubelet_ingress" {
+  security_group_id = huaweicloud_networking_secgroup.cce.id
+
+  direction        = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 10250
+  port_range_max   = 10250
+  remote_ip_prefix = var.vpc_cidr
+  description      = "Allow the CCE control plane to reach kubelet on worker nodes. Scoped to the VPC CIDR as a proxy for the master nodes' actual network location — confirm the real master-node CIDR against a live cluster and narrow this if it differs."
+}
+
+resource "huaweicloud_networking_secgroup_rule" "cce_nodeport_ingress_tcp" {
+  security_group_id = huaweicloud_networking_secgroup.cce.id
+
+  direction        = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 30000
+  port_range_max   = 32767
+  remote_ip_prefix = "0.0.0.0/0"
+  description      = "NodePort Service range (tunnel network model)"
+}
+
+resource "huaweicloud_networking_secgroup_rule" "cce_nodeport_ingress_udp" {
+  security_group_id = huaweicloud_networking_secgroup.cce.id
+
+  direction        = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "udp"
+  port_range_min   = 30000
+  port_range_max   = 32767
+  remote_ip_prefix = "0.0.0.0/0"
+  description      = "NodePort Service range (tunnel network model)"
+}
+
+# ---------------------------------------------------------------------------
 # NAT — controlled outbound-only connectivity for CCE nodes. RDS does not
 # route through NAT: it is a managed service and does not require outbound
 # internet access.
