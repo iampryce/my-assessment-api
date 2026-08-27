@@ -1,0 +1,308 @@
+openapi: 3.1.0
+info:
+  title: CashOnRails Assessment API
+  version: 1.0.0
+  description: Laravel REST API for a simple payment transaction lifecycle.
+servers:
+  - url: http://localhost:8080/api/v1
+paths:
+  /health:
+    get:
+      summary: Liveness check
+      responses:
+        '200':
+          description: Application is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /ready:
+    get:
+      summary: Readiness check
+      responses:
+        '200':
+          description: Application can access its configured database.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          description: Database is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnavailableResponse'
+  /transactions:
+    get:
+      summary: List transactions
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/TransactionStatus'
+      responses:
+        '200':
+          description: Paginated transactions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTransactions'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    post:
+      summary: Create a transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionRequest'
+      responses:
+        '201':
+          description: Transaction created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /transactions/{id}:
+    get:
+      summary: Retrieve a transaction
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      responses:
+        '200':
+          description: Transaction found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionEnvelope'
+        '404':
+          description: Transaction not found.
+    delete:
+      summary: Delete a transaction
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      responses:
+        '204':
+          description: Transaction deleted.
+        '404':
+          description: Transaction not found.
+  /transactions/{id}/status:
+    patch:
+      summary: Update transaction status
+      description: Supports pending to processing, and processing to successful or failed.
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  $ref: '#/components/schemas/TransactionStatus'
+      responses:
+        '200':
+          description: Transaction status updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionEnvelope'
+        '404':
+          description: Transaction not found.
+        '422':
+          $ref: '#/components/responses/ValidationError'
+components:
+  parameters:
+    TransactionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    ValidationError:
+      description: Request validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          const: ok
+    ReadyResponse:
+      type: object
+      required:
+        - status
+        - database
+      properties:
+        status:
+          type: string
+          const: ready
+        database:
+          type: string
+          const: ok
+    UnavailableResponse:
+      type: object
+      required:
+        - status
+        - database
+      properties:
+        status:
+          type: string
+          const: unavailable
+        database:
+          type: string
+          const: error
+    TransactionStatus:
+      type: string
+      enum:
+        - pending
+        - processing
+        - successful
+        - failed
+    Transaction:
+      type: object
+      required:
+        - id
+        - reference
+        - customer_name
+        - customer_email
+        - amount
+        - currency
+        - status
+        - description
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+          example: 1
+        reference:
+          type: string
+          example: TXN-A1B2C3D4E5F6
+        customer_name:
+          type: string
+          example: Ada Okafor
+        customer_email:
+          type: string
+          format: email
+          example: ada@example.com
+        amount:
+          type: integer
+          minimum: 1
+          description: Amount in minor currency units.
+          example: 125000
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          example: NGN
+        status:
+          $ref: '#/components/schemas/TransactionStatus'
+        description:
+          type:
+            - string
+            - 'null'
+          example: Invoice payment
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TransactionEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Transaction'
+    CreateTransactionRequest:
+      type: object
+      required:
+        - customer_name
+        - customer_email
+        - amount
+        - currency
+      properties:
+        reference:
+          type: string
+          maxLength: 64
+        customer_name:
+          type: string
+          maxLength: 255
+        customer_email:
+          type: string
+          format: email
+          maxLength: 255
+        amount:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        status:
+          $ref: '#/components/schemas/TransactionStatus'
+        description:
+          type:
+            - string
+            - 'null'
+    PaginatedTransactions:
+      type: object
+      required:
+        - data
+        - links
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        links:
+          type: object
+        meta:
+          type: object
+          required:
+            - current_page
+            - last_page
+            - per_page
+            - total
+          properties:
+            current_page:
+              type: integer
+            last_page:
+              type: integer
+            per_page:
+              type: integer
+            total:
+              type: integer
+    ValidationError:
+      type: object
+      required:
+        - message
+        - errors
+      properties:
+        message:
+          type: string
+          example: The given data was invalid.
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string

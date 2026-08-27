@@ -1,0 +1,14 @@
+.env
+.git
+.github
+.idea
+.vscode
+node_modules
+bootstrap/cache/*.php
+storage/logs/*
+vendor
+tests
+Task.md
+npm-debug.log
+Dockerfile
+compose.yaml
