@@ -326,6 +326,80 @@ data "aws_iam_policy_document" "github_apply_custom" {
   }
 
   statement {
+    sid       = "EksAmiSsmLookup"
+    effect    = "Allow"
+    actions   = ["ssm:GetParameter"]
+    resources = ["arn:aws:ssm:*::parameter/aws/service/eks/*"]
+  }
+
+  statement {
+    sid    = "EksControlPlaneLogging"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:PutRetentionPolicy",
+      "logs:DeleteLogGroup",
+      "logs:TagResource",
+      "logs:ListTagsForResource",
+    ]
+    resources = ["arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/eks/cashonrails-aws-*"]
+  }
+
+  statement {
+    sid       = "LogsDescribeReadback"
+    effect    = "Allow"
+    actions   = ["logs:DescribeLogGroups"]
+    resources = ["*"] # this action's resource-level permission model doesn't recognize a log-group ARN
+  }
+
+  statement {
+    sid       = "KmsAliasReadback"
+    effect    = "Allow"
+    actions   = ["kms:ListAliases"]
+    resources = ["*"] # kms:ListAliases does not support resource-level restriction
+  }
+
+  statement {
+    sid       = "EipReadback"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeAddressesAttribute"]
+    resources = ["*"] # this action does not support resource-level scoping
+  }
+
+  statement {
+    sid    = "IAMPolicyLifecycleForEksIrsa"
+    effect = "Allow"
+    actions = [
+      "iam:CreatePolicy",
+      "iam:DeletePolicy",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicyVersion",
+      "iam:ListPolicyVersions",
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
+    ]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/cashonrails-aws-*"]
+  }
+
+  statement {
+    sid    = "SecretsManagerForRdsManagedPassword"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:CreateSecret",
+      "secretsmanager:DeleteSecret",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:TagResource",
+    ]
+    # RDS reserves this exact "rds!db-" prefix account/region-wide for
+    # secrets it creates on the caller's behalf via manage_master_user_password;
+    # the actual secret name is only known after the DB instance exists, so
+    # this prefix is the narrowest scoping AWS allows ahead of creation.
+    resources = ["arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:rds!db-*"]
+  }
+
+  statement {
     sid       = "TerraformStateBucketList"
     effect    = "Allow"
     actions   = ["s3:ListBucket"]
