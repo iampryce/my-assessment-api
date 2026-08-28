@@ -18,6 +18,9 @@ module "eks" {
 
   eks_managed_node_groups = {
     default = {
+      name          = local.name
+      iam_role_name = "${local.name}-node"
+
       instance_types = [var.node_instance_type]
 
       min_size     = var.node_min_size

@@ -1,0 +1,44 @@
+name: Terraform Untaint (AWS Staging Recovery)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  untaint-staging:
+    name: untaint staging state
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: terraform init
+        working-directory: infra/aws/envs/staging
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: terraform untaint - NAT gateway EIP
+        working-directory: infra/aws/envs/staging
+        run: terraform untaint 'module.network.module.vpc.aws_eip.nat[0]'
+
+      - name: terraform untaint - EKS cluster KMS alias
+        working-directory: infra/aws/envs/staging
+        run: terraform untaint 'module.eks.module.eks.module.kms.aws_kms_alias.this["cluster"]'
+
+      - name: terraform untaint - EKS control plane log group
+        working-directory: infra/aws/envs/staging
+        run: terraform untaint 'module.eks.module.eks.aws_cloudwatch_log_group.this[0]'
