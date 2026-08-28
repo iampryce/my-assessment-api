@@ -8,9 +8,8 @@ terraform {
     }
   }
 
-  # No remote backend configured yet — same deferred decision as the
-  # Huawei environments (infra/huawei/envs/*). This is a temporary AWS
-  # validation environment; local state is acceptable for now.
+  # Remote S3 backend is configured in backend.tf (partial config — the
+  # bucket name is supplied at `terraform init` time, not committed here).
 }
 
 provider "aws" {

@@ -1,0 +1,8 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored and must never be committed with real
+# account details. Nothing in this file is a secret — these are just
+# identifiers — but keep the pattern consistent with the rest of the repo.
+
+aws_region  = "us-east-1"
+github_org  = "iampryce"
+github_repo = "my-assessment-api"

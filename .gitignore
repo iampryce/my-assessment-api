@@ -39,3 +39,4 @@ override.tf.json
 *_override.tf.json
 infra/**/terraform.tfvars
 infra/**/*.auto.tfvars
+infra/**/backend.hcl
