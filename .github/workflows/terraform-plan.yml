@@ -64,4 +64,4 @@ jobs:
       - name: terraform plan
         working-directory: infra/aws/envs/staging
         run: terraform plan -input=false
-# verification-only trigger: no workflow logic changed
+# verification-only trigger: no workflow logic changed (post-untaint check)
