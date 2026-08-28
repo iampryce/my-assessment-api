@@ -16,6 +16,14 @@ module "eks" {
   endpoint_public_access  = false
   endpoint_private_access = true
 
+  addons = {
+    vpc-cni = {
+      before_compute = true
+    }
+    kube-proxy = {}
+    coredns    = {}
+  }
+
   eks_managed_node_groups = {
     default = {
       name          = local.name
