@@ -21,6 +21,12 @@ module "eks" {
       name          = local.name
       iam_role_name = "${local.name}-node"
 
+      # Temporary diagnostic capability for the node/CNI readiness
+      # investigation - remove unless we decide SSM should stay long-term.
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+
       instance_types = [var.node_instance_type]
 
       min_size     = var.node_min_size
