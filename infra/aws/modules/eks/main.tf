@@ -1,21 +1,6 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 6.0"
-    }
-  }
-}
-
 locals {
   name = "cashonrails-aws-${var.environment}"
 }
-
-# ---------------------------------------------------------------------------
-# EKS cluster — private API endpoint only, one managed node group in the
-# private subnets. No public IP on nodes: the module places them in private
-# subnets and does not assign public IPs by default.
-# ---------------------------------------------------------------------------
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"

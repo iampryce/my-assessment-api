@@ -1,11 +1,5 @@
 name: Terraform Deploy (AWS)
 
-# Prepared, not yet live: the AWS_GITHUB_APPLY_ROLE_ARN and TF_STATE_BUCKET
-# repository variables this workflow depends on do not exist until the
-# bootstrap in infra/aws/bootstrap has been run and reviewed. Until then,
-# any run of this workflow fails at the "Configure AWS credentials" step
-# rather than doing something unintended.
-
 on:
   push:
     branches: [main]

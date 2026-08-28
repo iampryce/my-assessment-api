@@ -57,10 +57,6 @@ jobs:
           role-to-assume: ${{ vars.AWS_GITHUB_PLAN_ROLE_ARN }}
           aws-region: us-east-1
 
-      # TF_STATE_BUCKET is a repository variable set after the bootstrap
-      # runs (its state_bucket_name output) — not a secret, just an
-      # identifier. Until it's set this step fails fast rather than
-      # silently doing something unintended.
       - name: terraform init
         working-directory: infra/aws/envs/staging
         run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"

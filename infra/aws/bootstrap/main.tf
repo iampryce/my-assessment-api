@@ -123,7 +123,7 @@ data "aws_iam_policy_document" "github_plan_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_org}/${var.github_repo}:pull_request"]
+      values   = ["repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:pull_request"]
     }
   }
 }
@@ -136,6 +136,36 @@ resource "aws_iam_role" "github_plan" {
 resource "aws_iam_role_policy_attachment" "github_plan_readonly" {
   role       = aws_iam_role.github_plan.name
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
+# ---------------------------------------------------------------------------
+# Plan role lock-file permissions — Terraform's S3-native locking
+# (use_lockfile = true) requires PutObject/DeleteObject on the lock object
+# itself for ANY state-touching operation, including a read-only `plan`.
+# Scoped to exactly the two .tflock objects — not the state files, not a
+# bucket-wide wildcard — so the plan role still cannot write, delete, or
+# otherwise mutate actual state content or any AWS infrastructure.
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "github_plan_lockfile" {
+  statement {
+    sid    = "TerraformStateLockFiles"
+    effect = "Allow"
+    actions = [
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = [
+      "${aws_s3_bucket.terraform_state.arn}/aws/staging/terraform.tfstate.tflock",
+      "${aws_s3_bucket.terraform_state.arn}/aws/production/terraform.tfstate.tflock",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "github_plan_lockfile" {
+  name   = "cashonrails-github-actions-plan-lockfile"
+  role   = aws_iam_role.github_plan.id
+  policy = data.aws_iam_policy_document.github_plan_lockfile.json
 }
 
 # ---------------------------------------------------------------------------
@@ -169,8 +199,8 @@ data "aws_iam_policy_document" "github_apply_trust" {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_org}/${var.github_repo}:environment:staging",
-        "repo:${var.github_org}/${var.github_repo}:environment:production",
+        "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:staging",
+        "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:production",
       ]
     }
   }
