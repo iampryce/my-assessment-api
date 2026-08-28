@@ -2,10 +2,10 @@
 # terraform.tfvars is gitignored and must never be committed with real
 # account details. No credentials belong in this file at all — RDS's
 # master password is managed entirely by AWS Secrets Manager (see
-# infra/aws/modules/rds/main.tf).
+# terraform/aws/modules/rds/main.tf).
 #
 # This environment exists structurally but MUST NOT be deployed — see
-# infra/CLOUD_STRATEGY.md. Huawei Cloud remains the intended production
+# terraform/CLOUD_STRATEGY.md. Huawei Cloud remains the intended production
 # target.
 
 aws_region = "us-east-1"

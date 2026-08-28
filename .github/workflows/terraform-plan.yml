@@ -3,7 +3,7 @@ name: Terraform Plan (AWS)
 on:
   pull_request:
     paths:
-      - "infra/aws/**"
+      - "terraform/aws/**"
       - ".github/workflows/terraform-plan.yml"
 
 permissions:
@@ -24,14 +24,14 @@ jobs:
           terraform_version: "1.15.8"
 
       - name: terraform fmt check
-        run: terraform fmt -recursive -check -diff infra/aws
+        run: terraform fmt -recursive -check -diff terraform/aws
 
       - name: terraform init (no backend)
-        working-directory: infra/aws/envs/${{ matrix.environment }}
+        working-directory: terraform/aws/envs/${{ matrix.environment }}
         run: terraform init -backend=false -input=false
 
       - name: terraform validate
-        working-directory: infra/aws/envs/${{ matrix.environment }}
+        working-directory: terraform/aws/envs/${{ matrix.environment }}
         run: terraform validate
 
   plan-staging:
@@ -49,7 +49,7 @@ jobs:
           terraform_version: "1.15.8"
 
       # Assumes the read-only plan role (cashonrails-github-actions-plan)
-      # created by infra/aws/bootstrap. Trust is restricted to this repo's
+      # created by terraform/aws/bootstrap. Trust is restricted to this repo's
       # pull_request context — see the bootstrap's trust policy.
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -58,10 +58,10 @@ jobs:
           aws-region: us-east-1
 
       - name: terraform init
-        working-directory: infra/aws/envs/staging
+        working-directory: terraform/aws/envs/staging
         run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
 
       - name: terraform plan
-        working-directory: infra/aws/envs/staging
+        working-directory: terraform/aws/envs/staging
         run: terraform plan -input=false
 # verification-only trigger: no workflow logic changed (post-untaint check)

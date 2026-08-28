@@ -6,6 +6,12 @@ module "network" {
   azs         = var.azs
 }
 
+module "ecr" {
+  source = "../../modules/ecr"
+
+  environment = "staging"
+}
+
 module "eks" {
   source = "../../modules/eks"
 

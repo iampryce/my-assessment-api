@@ -28,9 +28,9 @@ jobs:
           aws-region: us-east-1
 
       - name: terraform init
-        working-directory: infra/aws/envs/staging
+        working-directory: terraform/aws/envs/staging
         run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
 
       - name: terraform untaint - EKS node group launch template
-        working-directory: infra/aws/envs/staging
+        working-directory: terraform/aws/envs/staging
         run: terraform untaint 'module.eks.module.eks.module.eks_managed_node_group["default"].aws_launch_template.this[0]'

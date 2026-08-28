@@ -407,6 +407,26 @@ data "aws_iam_policy_document" "github_apply_custom" {
     ]
     # The use_lockfile lock object lives under the same key prefix as the state file, so no separate permission is needed.
   }
+
+  statement {
+    sid    = "EcrRepositoryLifecycle"
+    effect = "Allow"
+    actions = [
+      "ecr:CreateRepository",
+      "ecr:DeleteRepository",
+      "ecr:DescribeRepositories",
+      "ecr:PutLifecyclePolicy",
+      "ecr:GetLifecyclePolicy",
+      "ecr:DeleteLifecyclePolicy",
+      "ecr:PutImageTagMutability",
+      "ecr:PutImageScanningConfiguration",
+      "ecr:TagResource",
+      "ecr:UntagResource",
+      "ecr:ListTagsForResource",
+    ]
+    # Unlike EKS/KMS, ECR repository ARNs are name-based and known ahead of creation, so every action here is scoped.
+    resources = ["arn:aws:ecr:*:${data.aws_caller_identity.current.account_id}:repository/cashonrails-aws-*"]
+  }
 }
 
 resource "aws_iam_role_policy" "github_apply_custom" {

@@ -2,7 +2,7 @@
 # terraform.tfvars is gitignored and must never be committed with real
 # account details. No credentials belong in this file at all — RDS's
 # master password is managed entirely by AWS Secrets Manager (see
-# infra/aws/modules/rds/main.tf).
+# terraform/aws/modules/rds/main.tf).
 
 aws_region = "us-east-1"
 azs        = ["us-east-1a", "us-east-1b"]

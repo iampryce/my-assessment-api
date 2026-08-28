@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "infra/aws/**"
+      - "terraform/aws/**"
       - ".github/workflows/terraform-deploy.yml"
   workflow_dispatch: {}
 
@@ -33,15 +33,15 @@ jobs:
           aws-region: us-east-1
 
       - name: terraform init
-        working-directory: infra/aws/envs/staging
+        working-directory: terraform/aws/envs/staging
         run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
 
       - name: terraform plan
-        working-directory: infra/aws/envs/staging
+        working-directory: terraform/aws/envs/staging
         run: terraform plan -input=false -out=tfplan
 
       - name: terraform apply
-        working-directory: infra/aws/envs/staging
+        working-directory: terraform/aws/envs/staging
         run: terraform apply -input=false -auto-approve tfplan
 
   production:
@@ -72,13 +72,13 @@ jobs:
           aws-region: us-east-1
 
       - name: terraform init
-        working-directory: infra/aws/envs/production
+        working-directory: terraform/aws/envs/production
         run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
 
       - name: terraform plan
-        working-directory: infra/aws/envs/production
+        working-directory: terraform/aws/envs/production
         run: terraform plan -input=false -out=tfplan
 
       - name: terraform apply
-        working-directory: infra/aws/envs/production
+        working-directory: terraform/aws/envs/production
         run: terraform apply -input=false -auto-approve tfplan
