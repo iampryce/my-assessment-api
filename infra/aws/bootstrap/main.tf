@@ -250,6 +250,13 @@ data "aws_iam_policy_document" "github_apply_custom" {
   }
 
   statement {
+    sid       = "SelfGetRole"
+    effect    = "Allow"
+    actions   = ["iam:GetRole"]
+    resources = [aws_iam_role.github_apply.arn]
+  }
+
+  statement {
     sid    = "IAMScopedToProjectRoles"
     effect = "Allow"
     actions = [
