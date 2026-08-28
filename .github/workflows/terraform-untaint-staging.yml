@@ -31,14 +31,6 @@ jobs:
         working-directory: infra/aws/envs/staging
         run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
 
-      - name: terraform untaint - NAT gateway EIP
+      - name: terraform untaint - EKS node group launch template
         working-directory: infra/aws/envs/staging
-        run: terraform untaint 'module.network.module.vpc.aws_eip.nat[0]'
-
-      - name: terraform untaint - EKS cluster KMS alias
-        working-directory: infra/aws/envs/staging
-        run: terraform untaint 'module.eks.module.eks.module.kms.aws_kms_alias.this["cluster"]'
-
-      - name: terraform untaint - EKS control plane log group
-        working-directory: infra/aws/envs/staging
-        run: terraform untaint 'module.eks.module.eks.aws_cloudwatch_log_group.this[0]'
+        run: terraform untaint 'module.eks.module.eks.module.eks_managed_node_group["default"].aws_launch_template.this[0]'
