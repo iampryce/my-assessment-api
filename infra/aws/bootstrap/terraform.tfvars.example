@@ -1,0 +1,14 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored and must never be committed with real
+# account details. Nothing in this file is a secret — these are just
+# identifiers — but keep the pattern consistent with the rest of the repo.
+
+aws_region  = "us-east-1"
+github_org  = "iampryce"
+github_repo = "my-assessment-api"
+
+# Immutable IDs — required because this repo was created after GitHub's
+# 2026-07-15 cutover to immutable OIDC subject claims. Find via:
+#   gh api repos/<org>/<repo> --jq '{owner_id: .owner.id, repo_id: .id}'
+github_owner_id = "170509563"
+github_repo_id  = "1348876199"

@@ -1,0 +1,36 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored and must never be committed with real
+# account details.
+
+# UNRESOLVED — verify against a live Huawei Cloud account before setting.
+# The Terraform-usable identifier for Huawei Cloud's Nigeria region has not
+# been confirmed. The values below are placeholders only, not a decision.
+region             = "REPLACE_ME"
+availability_zone  = "REPLACE_ME"
+
+vpc_cidr        = "10.10.0.0/16"
+cce_subnet_cidr = "10.10.1.0/24"
+rds_subnet_cidr = "10.10.2.0/24"
+
+enterprise_project_id = null
+
+# UNRESOLVED — confirm against a live Huawei Cloud account before setting.
+# Leave cluster_version unset/null to use the provider's default (Huawei's
+# current latest supported CCE version) unless you have a specific need
+# to pin one.
+cluster_version = null
+node_flavor_id  = "REPLACE_ME"
+node_key_pair   = "REPLACE_ME"
+node_count      = 2
+
+# UNRESOLVED — confirm against the live account/region catalog before setting.
+rds_flavor         = "REPLACE_ME"
+rds_engine_version = "REPLACE_ME"
+
+rds_volume_type      = "CLOUDSSD"
+rds_volume_size      = 40
+rds_backup_keep_days = 7
+
+# rds_password is intentionally NOT set here and must never be committed
+# with a real value. Supply it at apply time via the TF_VAR_rds_password
+# environment variable, sourced from Infisical.

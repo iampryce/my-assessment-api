@@ -1,0 +1,66 @@
+name: Terraform Plan (AWS)
+
+on:
+  pull_request:
+    paths:
+      - "infra/aws/**"
+      - ".github/workflows/terraform-plan.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: fmt + validate (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [staging, production]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: terraform fmt check
+        run: terraform fmt -recursive -check -diff infra/aws
+
+      - name: terraform init (no backend)
+        working-directory: infra/aws/envs/${{ matrix.environment }}
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        working-directory: infra/aws/envs/${{ matrix.environment }}
+        run: terraform validate
+
+  plan-staging:
+    name: plan (staging)
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required for OIDC
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      # Assumes the read-only plan role (cashonrails-github-actions-plan)
+      # created by infra/aws/bootstrap. Trust is restricted to this repo's
+      # pull_request context — see the bootstrap's trust policy.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_PLAN_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: terraform init
+        working-directory: infra/aws/envs/staging
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: terraform plan
+        working-directory: infra/aws/envs/staging
+        run: terraform plan -input=false

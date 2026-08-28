@@ -27,3 +27,23 @@ output "nat_gateway_id" {
   description = "ID of the production NAT gateway."
   value       = module.network.nat_gateway_id
 }
+
+output "cce_cluster_id" {
+  description = "ID of the production CCE cluster."
+  value       = module.cce.cluster_id
+}
+
+output "cce_node_pool_id" {
+  description = "ID of the production CCE node pool."
+  value       = module.cce.node_pool_id
+}
+
+output "rds_instance_id" {
+  description = "ID of the production RDS instance."
+  value       = module.rds.instance_id
+}
+
+output "rds_private_ips" {
+  description = "Private IP address(es) of the production RDS instance."
+  value       = module.rds.private_ips
+}
