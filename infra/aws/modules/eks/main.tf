@@ -16,13 +16,20 @@ module "eks" {
   endpoint_public_access  = false
   endpoint_private_access = true
 
+  addons = {
+    vpc-cni = {
+      before_compute = true
+    }
+    kube-proxy = {}
+    coredns    = {}
+  }
+
   eks_managed_node_groups = {
     default = {
       name          = local.name
       iam_role_name = "${local.name}-node"
 
-      # Temporary diagnostic capability for the node/CNI readiness
-      # investigation - remove unless we decide SSM should stay long-term.
+      # Temporary SSM diagnostic access - remove unless we decide to keep it.
       iam_role_additional_policies = {
         AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
       }
