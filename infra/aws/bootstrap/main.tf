@@ -1,15 +1,6 @@
 data "aws_caller_identity" "current" {}
 
-# ---------------------------------------------------------------------------
-# Terraform state bucket — versioned, encrypted, fully private. Used by
-# infra/aws/envs/staging and infra/aws/envs/production with separate key
-# prefixes (aws/staging/terraform.tfstate, aws/production/terraform.tfstate).
-#
-# Locking: Terraform 1.10+ supports native S3 state locking via the
-# backend's `use_lockfile` option (S3 conditional writes), which needs no
-# separate DynamoDB table. This account's Terraform is on 1.15.x, so the
-# envs use `use_lockfile = true` instead of a DynamoDB lock table.
-# ---------------------------------------------------------------------------
+# Versioned, encrypted, private Terraform state bucket; native S3 locking via use_lockfile (Terraform 1.10+), no DynamoDB needed.
 
 resource "aws_s3_bucket" "terraform_state" {
   bucket = "cashonrails-terraform-state-${data.aws_caller_identity.current.account_id}"
@@ -80,15 +71,7 @@ resource "aws_s3_bucket_policy" "terraform_state" {
   policy = data.aws_iam_policy_document.terraform_state_deny_insecure_transport.json
 }
 
-# ---------------------------------------------------------------------------
-# GitHub OIDC provider — lets GitHub Actions assume AWS IAM roles via
-# short-lived tokens instead of long-lived access keys.
-#
-# thumbprint_list is required by this resource's schema, but AWS has
-# validated GitHub's OIDC provider against its own trusted CA library
-# (not this thumbprint) since July 2023. The value below is GitHub's
-# documented root CA thumbprint, kept for schema compatibility only.
-# ---------------------------------------------------------------------------
+# GitHub OIDC provider for short-lived role assumption; thumbprint_list is required by schema but unused by AWS since July 2023.
 
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
@@ -96,13 +79,7 @@ resource "aws_iam_openid_connect_provider" "github" {
   thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
 }
 
-# ---------------------------------------------------------------------------
-# Plan role — assumed only by pull_request-triggered workflows. Read-only:
-# a PR can never mutate infrastructure through this role, only inspect it
-# for `terraform plan`. GitHub's OIDC sub claim for a pull_request event is
-# stable and repo-wide: "repo:<org>/<repo>:pull_request" (no branch/PR
-# number in it).
-# ---------------------------------------------------------------------------
+# Read-only role for pull_request-triggered plans; GitHub's PR sub claim is stable and repo-wide (no branch/PR number).
 
 data "aws_iam_policy_document" "github_plan_trust" {
   statement {
@@ -138,14 +115,7 @@ resource "aws_iam_role_policy_attachment" "github_plan_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
-# ---------------------------------------------------------------------------
-# Plan role lock-file permissions — Terraform's S3-native locking
-# (use_lockfile = true) requires PutObject/DeleteObject on the lock object
-# itself for ANY state-touching operation, including a read-only `plan`.
-# Scoped to exactly the two .tflock objects — not the state files, not a
-# bucket-wide wildcard — so the plan role still cannot write, delete, or
-# otherwise mutate actual state content or any AWS infrastructure.
-# ---------------------------------------------------------------------------
+# S3-native locking needs PutObject/DeleteObject on the two .tflock objects only, even for a read-only plan.
 
 data "aws_iam_policy_document" "github_plan_lockfile" {
   statement {
@@ -168,16 +138,7 @@ resource "aws_iam_role_policy" "github_plan_lockfile" {
   policy = data.aws_iam_policy_document.github_plan_lockfile.json
 }
 
-# ---------------------------------------------------------------------------
-# Apply role — assumed only by workflow jobs running under the "staging" or
-# "production" GitHub Environment (sub claim
-# "repo:<org>/<repo>:environment:<name>"). The "production" GitHub
-# Environment must have required-reviewer protection configured in the
-# repo's Settings -> Environments — that is a GitHub-side setting this
-# Terraform cannot configure, and is what actually enforces "production
-# needs explicit approval" (the IAM trust policy alone only restricts
-# *which* GitHub context can assume the role, not who approves the run).
-# ---------------------------------------------------------------------------
+# Apply role, assumed only under the staging/production GitHub Environments; production approval is enforced by GitHub Environment protection, not this trust policy.
 
 data "aws_iam_policy_document" "github_apply_trust" {
   statement {
@@ -211,25 +172,7 @@ resource "aws_iam_role" "github_apply" {
   assume_role_policy = data.aws_iam_policy_document.github_apply_trust.json
 }
 
-# ---------------------------------------------------------------------------
-# Apply role permissions — an interim, documented scope, not a fully
-# minimal one. The exact action set that terraform-aws-modules/{vpc,eks,rds}
-# invoke is large (EC2, EKS, IAM, KMS, RDS) and not safely enumerable by
-# hand without risking a broken apply from a missed permission. This
-# attaches AWS-managed policies where a reasonably-scoped one exists
-# (VPC, RDS), and a custom policy for EKS/IAM/KMS/S3-state where no
-# suitable managed policy exists for the *deploying* principal (the
-# managed EKS policies are meant for the cluster/node roles, not the
-# caller creating them). IAM role/instance-profile actions are scoped by
-# name prefix to this project's naming convention
-# ("cashonrails-aws-*") wherever the API allows resource-level scoping;
-# EKS OIDC-provider and KMS key creation cannot be scoped to a
-# not-yet-existing resource ARN and are left broad, noted below.
-#
-# This is not AdministratorAccess and touches no unrelated services.
-# Tighten further once real plan/apply runs show the exact actions used
-# (e.g. via IAM Access Analyzer policy generation).
-# ---------------------------------------------------------------------------
+# Interim apply-role scope: managed policies where reasonable (VPC/RDS), custom policy for EKS/IAM/KMS/S3-state where none exists for the caller; not AdministratorAccess.
 
 resource "aws_iam_role_policy_attachment" "github_apply_vpc" {
   role       = aws_iam_role.github_apply.name
@@ -250,10 +193,14 @@ data "aws_iam_policy_document" "github_apply_custom" {
   }
 
   statement {
-    sid       = "SelfGetRole"
-    effect    = "Allow"
-    actions   = ["iam:GetRole"]
-    resources = [aws_iam_role.github_apply.arn]
+    sid     = "SelfAndServiceLinkedRoleGetRole"
+    effect  = "Allow"
+    actions = ["iam:GetRole"]
+    resources = [
+      aws_iam_role.github_apply.arn,
+      # EKS's CreateNodegroup checks this pre-existing service-linked role exists via the caller's own iam:GetRole.
+      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/aws-service-role/eks-nodegroup.amazonaws.com/AWSServiceRoleForAmazonEKSNodegroup",
+    ]
   }
 
   statement {
@@ -298,9 +245,7 @@ data "aws_iam_policy_document" "github_apply_custom" {
       "iam:UntagOpenIDConnectProvider",
       "iam:UpdateOpenIDConnectProviderThumbprint",
     ]
-    # EKS's per-cluster IRSA OIDC provider ARN includes a cluster-specific
-    # ID only known after the cluster exists — cannot be scoped ahead of
-    # creation.
+    # Per-cluster OIDC provider ARN is only known after cluster creation, so this can't be scoped narrower.
     resources = ["*"]
   }
 
@@ -367,6 +312,51 @@ data "aws_iam_policy_document" "github_apply_custom" {
   }
 
   statement {
+    sid    = "Ec2LaunchTemplateCreate"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateLaunchTemplate",
+      "ec2:DescribeLaunchTemplates",
+      "ec2:DescribeLaunchTemplateVersions",
+    ]
+    # None of these three actions support resource-level scoping (confirmed live via AWS's AccessDenied response shape).
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "Ec2LaunchTemplateLifecycle"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateLaunchTemplateVersion",
+      "ec2:ModifyLaunchTemplate",
+      "ec2:DeleteLaunchTemplate",
+    ]
+    # Launch-template ARNs are ID-based, not name-based, so this wildcard-on-ID is the narrowest scope available.
+    resources = ["arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:launch-template/*"]
+  }
+
+  statement {
+    sid     = "Ec2RunInstancesForEksNodeGroup"
+    effect  = "Allow"
+    actions = ["ec2:RunInstances"]
+    resources = [
+      "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:instance/*",
+      "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:volume/*",
+      "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:network-interface/*",
+      "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:subnet/*",
+      "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:security-group/*",
+      "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:launch-template/*",
+      # AMIs are AWS/publicly-owned, not account-owned, so this resource type can't be account-scoped.
+      "arn:aws:ec2:*::image/*",
+    ]
+    condition {
+      test     = "StringLike"
+      variable = "ec2:LaunchTemplate"
+      values   = ["arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:launch-template/*"]
+    }
+  }
+
+  statement {
     sid    = "IAMPolicyLifecycleForEksIrsa"
     effect = "Allow"
     actions = [
@@ -392,10 +382,7 @@ data "aws_iam_policy_document" "github_apply_custom" {
       "secretsmanager:DescribeSecret",
       "secretsmanager:TagResource",
     ]
-    # RDS reserves this exact "rds!db-" prefix account/region-wide for
-    # secrets it creates on the caller's behalf via manage_master_user_password;
-    # the actual secret name is only known after the DB instance exists, so
-    # this prefix is the narrowest scoping AWS allows ahead of creation.
+    # rds!db-* is RDS's own reserved prefix for these secrets; the actual name isn't known until the DB instance exists.
     resources = ["arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:rds!db-*"]
   }
 
@@ -418,9 +405,7 @@ data "aws_iam_policy_document" "github_apply_custom" {
       "${aws_s3_bucket.terraform_state.arn}/aws/staging/*",
       "${aws_s3_bucket.terraform_state.arn}/aws/production/*",
     ]
-    # The S3-native lock file created by `use_lockfile` lives under the
-    # same key prefix as the state file it locks, so no separate
-    # permission is needed for locking.
+    # The use_lockfile lock object lives under the same key prefix as the state file, so no separate permission is needed.
   }
 }
 
