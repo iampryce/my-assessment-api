@@ -1,5 +1,5 @@
 output "state_bucket_name" {
-  description = "Name of the Terraform state bucket. Needed for backend-config when running `terraform init` in infra/aws/envs/*."
+  description = "Name of the Terraform state bucket. Needed for backend-config when running `terraform init` in terraform/aws/envs/*."
   value       = aws_s3_bucket.terraform_state.bucket
 }
 

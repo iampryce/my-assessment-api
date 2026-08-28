@@ -26,7 +26,7 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 
-# Terraform (infra/)
+# Terraform (terraform/)
 **/.terraform/
 **/.terraform.tfstate.lock.info
 *.tfstate
@@ -37,6 +37,6 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-infra/**/terraform.tfvars
-infra/**/*.auto.tfvars
-infra/**/backend.hcl
+terraform/**/terraform.tfvars
+terraform/**/*.auto.tfvars
+terraform/**/backend.hcl

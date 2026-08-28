@@ -1,5 +1,5 @@
 output "vpc_id" {
-  description = "ID of the production validation VPC."
+  description = "ID of the staging validation VPC."
   value       = module.network.vpc_id
 }
 
@@ -14,7 +14,7 @@ output "public_subnet_ids" {
 }
 
 output "eks_cluster_name" {
-  description = "Name of the production EKS cluster."
+  description = "Name of the staging EKS cluster."
   value       = module.eks.cluster_name
 }
 
@@ -36,4 +36,9 @@ output "rds_endpoint" {
 output "rds_security_group_id" {
   description = "Security group ID for RDS — ingress from EKS nodes on 5432 only."
   value       = module.rds.security_group_id
+}
+
+output "ecr_repository_url" {
+  description = "ECR repository URI to push/pull the staging application image."
+  value       = module.ecr.repository_url
 }

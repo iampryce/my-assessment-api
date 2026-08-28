@@ -1,6 +1,6 @@
 # Partial backend configuration. Terraform backend blocks cannot reference
 # variables, and the bucket name depends on the AWS account ID (from the
-# bootstrap in infra/aws/bootstrap), which does not belong in committed
+# bootstrap in terraform/aws/bootstrap), which does not belong in committed
 # code. Supply the bucket at `terraform init` time:
 #
 #   terraform init -backend-config=backend.hcl
