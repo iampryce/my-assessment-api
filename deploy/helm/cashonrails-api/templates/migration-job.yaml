@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cashonrails-api-migrate
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "cashonrails-api.labels" . | nindent 4 }}
+    role: migration
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "cashonrails-api.labels" . | nindent 8 }}
+        role: migration
+    spec:
+      restartPolicy: Never
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          image: "{{ required "image.repository is required (set via values-<env>.yaml)" .Values.image.repository }}:{{ required "image.tag is required (set via values-<env>.yaml)" .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: {{ toYaml .Values.migration.command | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: app-config
+            {{- range .Values.secretRefs }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
+          securityContext:
+            runAsNonRoot: {{ .Values.containerSecurityContext.runAsNonRoot }}
+            allowPrivilegeEscalation: {{ .Values.containerSecurityContext.allowPrivilegeEscalation }}

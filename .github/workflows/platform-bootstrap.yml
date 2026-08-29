@@ -1,0 +1,40 @@
+# Plan-only: the apply role has no IAM permissions over bootstrap's own roles (see final report).
+
+name: Platform Bootstrap (plan only)
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "terraform/aws/bootstrap/**"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan bootstrap IAM (read-only)
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Configure AWS credentials (OIDC, read-only plan role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_PLAN_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: terraform init
+        working-directory: terraform/aws/bootstrap
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: terraform plan
+        working-directory: terraform/aws/bootstrap
+        run: terraform plan -input=false

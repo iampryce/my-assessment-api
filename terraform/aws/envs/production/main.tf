@@ -12,6 +12,16 @@ module "ecr" {
   environment = "production"
 }
 
+module "cicd_ssm_target" {
+  source = "../../modules/cicd-ssm-target"
+
+  environment = "production"
+
+  vpc_id    = module.network.vpc_id
+  subnet_id = module.network.private_subnet_ids[0]
+  ami_id    = var.cicd_ssm_target_ami_id
+}
+
 module "eks" {
   source = "../../modules/eks"
 
@@ -26,6 +36,8 @@ module "eks" {
   node_desired_size  = var.node_desired_size
   node_min_size      = var.node_min_size
   node_max_size      = var.node_max_size
+
+  cicd_ssm_target_security_group_id = module.cicd_ssm_target.security_group_id
 }
 
 module "rds" {

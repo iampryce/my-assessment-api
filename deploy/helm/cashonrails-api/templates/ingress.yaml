@@ -1,0 +1,28 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cashonrails-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "cashonrails-api.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ required "ingress.clusterIssuer is required when ingress.enabled is true" .Values.ingress.clusterIssuer }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ required "ingress.host is required when ingress.enabled is true" .Values.ingress.host }}
+      secretName: cashonrails-api-tls
+  rules:
+    - host: {{ required "ingress.host is required when ingress.enabled is true" .Values.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cashonrails-api
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

@@ -1,0 +1,10 @@
+replicaCount: 2
+environment: production
+
+# Same registry as staging — production never rebuilds; it deploys the identical image:tag that passed staging.
+image:
+  repository: "494472951824.dkr.ecr.us-east-1.amazonaws.com/cashonrails-aws-staging"
+  tag: "unset" # overwritten by the approval-gated promotion step with the exact SHA that passed staging; never :latest
+
+config:
+  APP_ENV: "production"

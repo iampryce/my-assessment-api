@@ -1,0 +1,54 @@
+# Layer: AWS Foundation - network, ECR, SSM connectivity bridge. Manually dispatched.
+
+name: AWS Foundation
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Which environment to plan/apply"
+        required: true
+        type: choice
+        options: [staging, production]
+
+permissions:
+  contents: read
+
+jobs:
+  plan-and-apply:
+    name: Plan + apply (network, ECR, SSM target)
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: terraform init
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      # module.eks and module.rds are separate layers (eks-core.yml), intentionally excluded.
+      - name: terraform plan
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}
+        run: |
+          terraform plan -input=false \
+            -target='module.network' \
+            -target='module.ecr' \
+            -target='module.cicd_ssm_target' \
+            -out=tfplan
+
+      - name: terraform apply
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}
+        run: terraform apply -input=false -auto-approve tfplan

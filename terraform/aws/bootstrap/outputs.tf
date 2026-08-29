@@ -22,3 +22,13 @@ output "github_apply_role_arn" {
   description = "IAM role ARN for GitHub Actions to assume on staging/production environment-protected workflows (read-write, scoped)."
   value       = aws_iam_role.github_apply.arn
 }
+
+output "github_app_cicd_role_arn" {
+  description = "IAM role ARN for the application CI/CD workflow (ECR push + EKS deploy, separate from the Terraform apply role)."
+  value       = aws_iam_role.github_app_cicd.arn
+}
+
+output "github_platform_bootstrap_role_arn" {
+  description = "IAM role ARN for installing/upgrading the cluster platform layer (Argo CD, ingress-nginx, cert-manager). Gated behind the \"platform\" GitHub Environment; separate from both the infra-apply and app-cicd roles."
+  value       = aws_iam_role.github_platform_bootstrap.arn
+}

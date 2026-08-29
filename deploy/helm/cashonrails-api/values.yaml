@@ -1,0 +1,73 @@
+namespace: cashonrails
+
+replicaCount: 1
+
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# Disabled by default: no CashOnRails-owned domain exists yet (external prerequisite - see the
+# platform report). Turn on per-environment only once a real host is available; the chart already
+# fails closed (see templates/ingress.yaml) if enabled without a host/clusterIssuer.
+ingress:
+  enabled: false
+  className: nginx
+  clusterIssuer: ""
+  host: ""
+
+probes:
+  liveness:
+    path: /api/v1/health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    path: /api/v1/ready
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+
+containerSecurityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+
+config:
+  APP_ENV: "production"
+  APP_DEBUG: "false"
+  LOG_CHANNEL: "stderr"
+  DB_CONNECTION: "pgsql"
+  DB_PORT: "5432"
+  DB_DATABASE: "cashonrails"
+
+secretRefs:
+  - app-db-credentials
+  - app-secrets
+
+migration:
+  command: ["php", "artisan", "migrate", "--force"]

@@ -42,3 +42,8 @@ variable "node_max_size" {
   description = "Maximum worker node count."
   type        = number
 }
+
+variable "cicd_ssm_target_security_group_id" {
+  description = "Security group ID of the CI/CD SSM deployment bridge — pass module.cicd_ssm_target.security_group_id. Allowed 443 ingress to the cluster so the deploy pipeline can reach the private API."
+  type        = string
+}

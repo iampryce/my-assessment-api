@@ -434,3 +434,207 @@ resource "aws_iam_role_policy" "github_apply_custom" {
   role   = aws_iam_role.github_apply.id
   policy = data.aws_iam_policy_document.github_apply_custom.json
 }
+
+# App CI/CD role — separate from the Terraform apply role; pushes images and deploys to EKS, never touches infrastructure.
+
+data "aws_iam_policy_document" "github_app_cicd_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values = [
+        "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:ref:refs/heads/main",
+        "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:staging",
+        "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:production",
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_app_cicd" {
+  name               = "cashonrails-github-actions-app-cicd"
+  assume_role_policy = data.aws_iam_policy_document.github_app_cicd_trust.json
+}
+
+data "aws_iam_policy_document" "github_app_cicd_custom" {
+  statement {
+    sid       = "EcrAuth"
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"] # docker login has no resource-level scoping
+  }
+
+  statement {
+    sid    = "EcrPushToAppRepositories"
+    effect = "Allow"
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:PutImage",
+    ]
+    resources = [
+      "arn:aws:ecr:*:${data.aws_caller_identity.current.account_id}:repository/cashonrails-aws-staging",
+      "arn:aws:ecr:*:${data.aws_caller_identity.current.account_id}:repository/cashonrails-aws-production",
+    ]
+  }
+
+  statement {
+    sid     = "EksClusterDiscovery"
+    effect  = "Allow"
+    actions = ["eks:DescribeCluster"]
+    resources = [
+      "arn:aws:eks:*:${data.aws_caller_identity.current.account_id}:cluster/cashonrails-aws-staging",
+      "arn:aws:eks:*:${data.aws_caller_identity.current.account_id}:cluster/cashonrails-aws-production",
+    ]
+  }
+
+  statement {
+    sid    = "ReadRdsManagedSecretForAppConfig"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:DescribeSecret",
+    ]
+    resources = ["arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:rds!db-*"]
+  }
+
+  statement {
+    sid       = "DiscoverCicdSsmTarget"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeInstances"]
+    resources = ["*"] # bulk-enumeration action, no resource-level scoping - same class as other unscoped Describe* actions in this policy
+  }
+
+  statement {
+    sid     = "StartSessionToCicdSsmTarget"
+    effect  = "Allow"
+    actions = ["ssm:StartSession"]
+    resources = [
+      "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:instance/*",
+      "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:document/AWS-StartPortForwardingSessionToRemoteHost",
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "ssm:resourceTag/Purpose"
+      values   = ["cicd-ssm-target"]
+    }
+  }
+
+  statement {
+    sid     = "TerminateOwnSsmSession"
+    effect  = "Allow"
+    actions = ["ssm:TerminateSession"]
+    # ${aws:username} is not populated for assumed-role sessions (GitHub OIDC is always an assumed role) - "GitHubActions" is the confirmed, unoverridden role-session-name for every workflow in this repo.
+    resources = ["arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:session/GitHubActions-*"]
+  }
+}
+
+resource "aws_iam_role_policy" "github_app_cicd_custom" {
+  name   = "cashonrails-github-actions-app-cicd-custom"
+  role   = aws_iam_role.github_app_cicd.id
+  policy = data.aws_iam_policy_document.github_app_cicd_custom.json
+}
+
+# Platform-bootstrap role — installs/upgrades the cluster platform layer (Argo CD, ingress-nginx,
+# cert-manager) only. Distinct from both the infra-apply role (VPC/EKS/RDS/ECR) and the app-cicd
+# role (namespace-scoped app deploys), so neither of those ever needs cluster-scoped Kubernetes
+# access. Gated behind its own GitHub Environment ("platform") so it requires the same kind of
+# deliberate manual approval as production, since it is rare and cluster-wide by nature.
+#
+# Its AWS-side IAM policy stays deliberately narrow (EKS discovery + the same SSM-tunnel actions
+# app-cicd already has) - the actual cluster-admin-equivalent power comes from the EKS access
+# entry's Kubernetes RBAC association (see modules/eks), not from AWS IAM actions here.
+
+data "aws_iam_policy_document" "github_platform_bootstrap_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values = [
+        "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:platform",
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_platform_bootstrap" {
+  name               = "cashonrails-github-actions-platform-bootstrap"
+  assume_role_policy = data.aws_iam_policy_document.github_platform_bootstrap_trust.json
+}
+
+data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
+  statement {
+    sid     = "EksClusterDiscovery"
+    effect  = "Allow"
+    actions = ["eks:DescribeCluster"]
+    resources = [
+      "arn:aws:eks:*:${data.aws_caller_identity.current.account_id}:cluster/cashonrails-aws-staging",
+      "arn:aws:eks:*:${data.aws_caller_identity.current.account_id}:cluster/cashonrails-aws-production",
+    ]
+  }
+
+  statement {
+    sid       = "DiscoverCicdSsmTarget"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeInstances"]
+    resources = ["*"] # bulk-enumeration action, no resource-level scoping - same class as other unscoped Describe* actions in this policy
+  }
+
+  statement {
+    sid     = "StartSessionToCicdSsmTarget"
+    effect  = "Allow"
+    actions = ["ssm:StartSession"]
+    resources = [
+      "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:instance/*",
+      "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:document/AWS-StartPortForwardingSessionToRemoteHost",
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "ssm:resourceTag/Purpose"
+      values   = ["cicd-ssm-target"]
+    }
+  }
+
+  statement {
+    sid       = "TerminateOwnSsmSession"
+    effect    = "Allow"
+    actions   = ["ssm:TerminateSession"]
+    resources = ["arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:session/GitHubActions-*"]
+  }
+}
+
+resource "aws_iam_role_policy" "github_platform_bootstrap_custom" {
+  name   = "cashonrails-github-actions-platform-bootstrap-custom"
+  role   = aws_iam_role.github_platform_bootstrap.id
+  policy = data.aws_iam_policy_document.github_platform_bootstrap_custom.json
+}

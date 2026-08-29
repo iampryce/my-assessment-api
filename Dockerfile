@@ -15,7 +15,7 @@ FROM dunglas/frankenphp:1-php8.4-alpine
 
 WORKDIR /app
 
-RUN install-php-extensions pdo_sqlite opcache
+RUN install-php-extensions pdo_sqlite pdo_pgsql opcache
 
 COPY --from=vendor /app/vendor ./vendor
 COPY . .
@@ -26,11 +26,10 @@ RUN mkdir -p /config/caddy /data/caddy database storage/app/private storage/app/
     && chown -R www-data:www-data /config/caddy /data/caddy database storage bootstrap/cache \
     && chmod +x /usr/local/bin/app-entrypoint
 
+# DB_* is intentionally not set here — Kubernetes supplies it via ConfigMap/Secret so the same image runs against Postgres in staging/production, not just SQLite locally.
 ENV APP_ENV=production \
     APP_DEBUG=false \
     LOG_CHANNEL=stderr \
-    DB_CONNECTION=sqlite \
-    DB_DATABASE=/app/database/database.sqlite \
     SERVER_NAME=:8080
 
 EXPOSE 8080
