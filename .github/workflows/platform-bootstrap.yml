@@ -37,4 +37,9 @@ jobs:
 
       - name: terraform plan
         working-directory: terraform/aws/bootstrap
-        run: terraform plan -input=false
+        run: |
+          terraform plan -input=false \
+            -var="github_org=${{ vars.TF_GITHUB_ORG }}" \
+            -var="github_repo=${{ vars.TF_GITHUB_REPO }}" \
+            -var="github_owner_id=${{ vars.TF_GITHUB_OWNER_ID }}" \
+            -var="github_repo_id=${{ vars.TF_GITHUB_REPO_ID }}"
