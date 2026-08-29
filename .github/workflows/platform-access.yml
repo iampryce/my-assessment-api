@@ -1,0 +1,76 @@
+# Layer: Platform Access - EKS access entries for app-cicd and platform-bootstrap. Idempotent, safe to re-run.
+# Depends on: bootstrap IAM (applied manually) + EKS Core already applied.
+
+name: Platform Access
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Which environment to plan/apply"
+        required: true
+        type: choice
+        options: [staging, production]
+
+permissions:
+  contents: read
+
+jobs:
+  check-prerequisites:
+    name: Verify EKS Core is fully applied
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+      # Direct AWS check, not a terraform-plan diff: module.eks includes the access entries this
+      # workflow is about to create, so a zero-diff check on the whole module would always fail.
+      - name: Confirm EKS cluster is ACTIVE
+        run: |
+          STATUS=$(aws eks describe-cluster --name cashonrails-aws-${{ inputs.target_environment }} --query 'cluster.status' --output text)
+          [ "$STATUS" = "ACTIVE" ] || { echo "EKS cluster is not ACTIVE (status: $STATUS) - run eks-core.yml first"; exit 1; }
+
+  plan-and-apply:
+    name: Plan + apply (EKS access entries)
+    needs: [check-prerequisites]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: terraform init
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      # Targeted to exactly these 4 resources - excludes KMS/node-group drift (see final report).
+      - name: terraform plan
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}
+        run: |
+          terraform plan -input=false \
+            -target='module.eks.module.eks.aws_eks_access_entry.this["app_cicd"]' \
+            -target='module.eks.module.eks.aws_eks_access_policy_association.this["app_cicd_edit"]' \
+            -target='module.eks.module.eks.aws_eks_access_entry.this["platform_bootstrap"]' \
+            -target='module.eks.module.eks.aws_eks_access_policy_association.this["platform_bootstrap_cluster_admin"]' \
+            -out=tfplan
+
+      - name: terraform apply
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}
+        run: terraform apply -input=false -auto-approve tfplan

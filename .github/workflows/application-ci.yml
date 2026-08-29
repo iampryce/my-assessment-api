@@ -1,0 +1,255 @@
+name: Application CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "deploy/helm/cashonrails-api/values-staging.yaml"
+      - "deploy/helm/cashonrails-api/values-production.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_sqlite, sqlite3
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          touch database/database.sqlite
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Check code style
+        run: ./vendor/bin/pint --test
+
+      - name: Run tests
+        run: php artisan test
+
+  docker:
+    name: Docker build + scan
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build image
+        run: docker build -t cashonrails-api:ci .
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: cashonrails-api:ci
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+  push-staging:
+    name: Push image to staging ECR
+    needs: docker
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_APP_CICD_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Login to ECR
+        run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ vars.STAGING_ECR_REPOSITORY_URL }}
+
+      - name: Build and push immutable image
+        id: build
+        run: |
+          IMAGE="${{ vars.STAGING_ECR_REPOSITORY_URL }}:${{ github.sha }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+  deploy-staging:
+    name: Deploy to staging
+    needs: push-staging
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_APP_CICD_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Install session-manager-plugin
+        run: |
+          curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+
+      - name: Open SSM tunnel to the private EKS API
+        run: |
+          TARGET_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Purpose,Values=cicd-ssm-target" "Name=tag:Environment,Values=staging" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" --output text)
+          ENDPOINT=$(aws eks describe-cluster --name cashonrails-aws-staging --query "cluster.endpoint" --output text | sed 's#https://##')
+
+          aws ssm start-session \
+            --target "$TARGET_ID" \
+            --document-name AWS-StartPortForwardingSessionToRemoteHost \
+            --parameters "{\"host\":[\"$ENDPOINT\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"6443\"]}" \
+            > /tmp/ssm-session.log 2>&1 &
+          echo $! > /tmp/ssm-session.pid
+
+          echo "ENDPOINT=$ENDPOINT" >> "$GITHUB_ENV"
+
+          for i in $(seq 1 15); do
+            (echo > /dev/tcp/127.0.0.1/6443) >/dev/null 2>&1 && break
+            sleep 1
+          done
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig --name cashonrails-aws-staging --region us-east-1
+          kubectl config set-cluster "$(kubectl config current-context)" --server=https://127.0.0.1:6443 --tls-server-name="$ENDPOINT"
+
+      - name: Verify kubectl connectivity
+        run: kubectl get --raw='/healthz'
+
+      - name: Sync DB credentials secret
+        run: |
+          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "${{ vars.STAGING_DB_SECRET_ARN }}" --query SecretString --output text)
+          kubectl create secret generic app-db-credentials -n cashonrails \
+            --from-literal=DB_HOST="$(echo "$SECRET_JSON" | jq -r .host)" \
+            --from-literal=DB_USERNAME="$(echo "$SECRET_JSON" | jq -r .username)" \
+            --from-literal=DB_PASSWORD="$(echo "$SECRET_JSON" | jq -r .password)" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Sync app secrets
+        run: |
+          kubectl create secret generic app-secrets -n cashonrails \
+            --from-literal=APP_KEY="${{ secrets.APP_KEY }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Close SSM tunnel
+        if: always()
+        run: |
+          SESSION_ID=$(grep -o '"SessionId": "[^"]*"' /tmp/ssm-session.log | cut -d'"' -f4 || true)
+          [ -n "$SESSION_ID" ] && aws ssm terminate-session --session-id "$SESSION_ID" || true
+          [ -f /tmp/ssm-session.pid ] && kill "$(cat /tmp/ssm-session.pid)" 2>/dev/null || true
+
+      - name: Update staging Helm image tag
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"${{ github.sha }}\"|" deploy/helm/cashonrails-api/values-staging.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deploy/helm/cashonrails-api/values-staging.yaml
+          git commit -m "deploy(staging): ${{ github.sha }} [skip ci]"
+          git push origin HEAD:main
+
+  deploy-production:
+    name: Deploy to production
+    needs: [deploy-staging, push-staging]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_APP_CICD_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Install session-manager-plugin
+        run: |
+          curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+
+      - name: Open SSM tunnel to the private EKS API
+        run: |
+          TARGET_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Purpose,Values=cicd-ssm-target" "Name=tag:Environment,Values=production" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" --output text)
+          ENDPOINT=$(aws eks describe-cluster --name cashonrails-aws-production --query "cluster.endpoint" --output text | sed 's#https://##')
+
+          aws ssm start-session \
+            --target "$TARGET_ID" \
+            --document-name AWS-StartPortForwardingSessionToRemoteHost \
+            --parameters "{\"host\":[\"$ENDPOINT\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"6443\"]}" \
+            > /tmp/ssm-session.log 2>&1 &
+          echo $! > /tmp/ssm-session.pid
+
+          echo "ENDPOINT=$ENDPOINT" >> "$GITHUB_ENV"
+
+          for i in $(seq 1 15); do
+            (echo > /dev/tcp/127.0.0.1/6443) >/dev/null 2>&1 && break
+            sleep 1
+          done
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig --name cashonrails-aws-production --region us-east-1
+          kubectl config set-cluster "$(kubectl config current-context)" --server=https://127.0.0.1:6443 --tls-server-name="$ENDPOINT"
+
+      - name: Verify kubectl connectivity
+        run: kubectl get --raw='/healthz'
+
+      - name: Sync DB credentials secret
+        run: |
+          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "${{ vars.PRODUCTION_DB_SECRET_ARN }}" --query SecretString --output text)
+          kubectl create secret generic app-db-credentials -n cashonrails \
+            --from-literal=DB_HOST="$(echo "$SECRET_JSON" | jq -r .host)" \
+            --from-literal=DB_USERNAME="$(echo "$SECRET_JSON" | jq -r .username)" \
+            --from-literal=DB_PASSWORD="$(echo "$SECRET_JSON" | jq -r .password)" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Sync app secrets
+        run: |
+          kubectl create secret generic app-secrets -n cashonrails \
+            --from-literal=APP_KEY="${{ secrets.APP_KEY }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Close SSM tunnel
+        if: always()
+        run: |
+          SESSION_ID=$(grep -o '"SessionId": "[^"]*"' /tmp/ssm-session.log | cut -d'"' -f4 || true)
+          [ -n "$SESSION_ID" ] && aws ssm terminate-session --session-id "$SESSION_ID" || true
+          [ -f /tmp/ssm-session.pid ] && kill "$(cat /tmp/ssm-session.pid)" 2>/dev/null || true
+
+      - name: Update production Helm image tag
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"${{ github.sha }}\"|" deploy/helm/cashonrails-api/values-production.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deploy/helm/cashonrails-api/values-production.yaml
+          git commit -m "deploy(production): ${{ github.sha }} [skip ci]"
+          git push origin HEAD:main

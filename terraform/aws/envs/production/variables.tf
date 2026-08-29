@@ -80,3 +80,9 @@ variable "rds_backup_retention_period" {
   type        = number
   default     = 1
 }
+
+variable "cicd_ssm_target_ami_id" {
+  description = "Amazon Linux 2023 x86_64 AMI ID for the CI/CD SSM deployment bridge. A recent AMI is set as a default; confirm it is still current at apply time with: aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 --query Parameter.Value --output text --region us-east-1"
+  type        = string
+  default     = "ami-0332d564d76dbd8d6"
+}

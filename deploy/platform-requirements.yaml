@@ -1,0 +1,13 @@
+# What an app needs from the platform - not how it gets built. See final report for the mapping.
+
+application:
+  name: cashonrails-api
+
+requirements:
+  database: true
+  container_registry: true
+  gitops: true
+  ingress: true
+  tls: true
+  dns: true
+  observability: true

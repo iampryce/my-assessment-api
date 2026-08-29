@@ -1,0 +1,335 @@
+# Layer: Cluster Platform Add-ons. argocd/ingress-nginx/observability run in parallel; cert-manager needs ingress-nginx; dns needs cert-manager.
+
+name: Platform Add-ons
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Which environment to plan/apply"
+        required: true
+        type: choice
+        options: [staging, production]
+      enable_dns:
+        description: "Also apply the DNS record (requires a real hosted zone already supplied via tfvars)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  check-prerequisites:
+    name: Verify Platform Access is fully applied
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: terraform init
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+      - name: terraform plan -detailed-exitcode (access entries)
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}
+        run: |
+          terraform plan -input=false -detailed-exitcode \
+            -target='module.eks.module.eks.aws_eks_access_entry.this["app_cicd"]' \
+            -target='module.eks.module.eks.aws_eks_access_policy_association.this["app_cicd_edit"]' \
+            -target='module.eks.module.eks.aws_eks_access_entry.this["platform_bootstrap"]' \
+            -target='module.eks.module.eks.aws_eks_access_policy_association.this["platform_bootstrap_cluster_admin"]'
+
+  argocd:
+    name: Argo CD
+    needs: [check-prerequisites]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Configure AWS credentials (OIDC, platform-bootstrap role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_PLATFORM_BOOTSTRAP_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Install session-manager-plugin
+        run: |
+          curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+
+      - name: Open SSM tunnel to the private EKS API
+        run: |
+          TARGET_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Purpose,Values=cicd-ssm-target" "Name=tag:Environment,Values=${{ inputs.target_environment }}" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" --output text)
+          aws ssm start-session \
+            --target "$TARGET_ID" \
+            --document-name AWS-StartPortForwardingSessionToRemoteHost \
+            --parameters "{\"host\":[\"$(aws eks describe-cluster --name cashonrails-aws-${{ inputs.target_environment }} --query 'cluster.endpoint' --output text | sed 's#https://##')\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"6443\"]}" \
+            > /tmp/ssm-session.log 2>&1 &
+          echo $! > /tmp/ssm-session.pid
+          for i in $(seq 1 15); do (echo > /dev/tcp/127.0.0.1/6443) >/dev/null 2>&1 && break; sleep 1; done
+
+      - name: terraform init
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      # acme_email is a required root variable, so every job needs it, not just cert-manager.
+      - name: terraform apply (Argo CD only)
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: |
+          terraform apply -input=false -auto-approve \
+            -target='module.argocd' \
+            -var="acme_email=${{ vars.ACME_EMAIL }}"
+
+      - name: Close SSM tunnel
+        if: always()
+        run: |
+          SESSION_ID=$(grep -o '"SessionId": "[^"]*"' /tmp/ssm-session.log | cut -d'"' -f4 || true)
+          [ -n "$SESSION_ID" ] && aws ssm terminate-session --session-id "$SESSION_ID" || true
+          [ -f /tmp/ssm-session.pid ] && kill "$(cat /tmp/ssm-session.pid)" 2>/dev/null || true
+
+  ingress-nginx:
+    name: ingress-nginx
+    needs: [check-prerequisites]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Configure AWS credentials (OIDC, platform-bootstrap role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_PLATFORM_BOOTSTRAP_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Install session-manager-plugin
+        run: |
+          curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+
+      - name: Open SSM tunnel to the private EKS API
+        run: |
+          TARGET_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Purpose,Values=cicd-ssm-target" "Name=tag:Environment,Values=${{ inputs.target_environment }}" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" --output text)
+          aws ssm start-session \
+            --target "$TARGET_ID" \
+            --document-name AWS-StartPortForwardingSessionToRemoteHost \
+            --parameters "{\"host\":[\"$(aws eks describe-cluster --name cashonrails-aws-${{ inputs.target_environment }} --query 'cluster.endpoint' --output text | sed 's#https://##')\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"6443\"]}" \
+            > /tmp/ssm-session.log 2>&1 &
+          echo $! > /tmp/ssm-session.pid
+          for i in $(seq 1 15); do (echo > /dev/tcp/127.0.0.1/6443) >/dev/null 2>&1 && break; sleep 1; done
+
+      - name: terraform init
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: terraform apply (ingress-nginx only)
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: |
+          terraform apply -input=false -auto-approve \
+            -target='module.ingress_nginx' \
+            -var="acme_email=${{ vars.ACME_EMAIL }}"
+
+      - name: Close SSM tunnel
+        if: always()
+        run: |
+          SESSION_ID=$(grep -o '"SessionId": "[^"]*"' /tmp/ssm-session.log | cut -d'"' -f4 || true)
+          [ -n "$SESSION_ID" ] && aws ssm terminate-session --session-id "$SESSION_ID" || true
+          [ -f /tmp/ssm-session.pid ] && kill "$(cat /tmp/ssm-session.pid)" 2>/dev/null || true
+
+  observability:
+    name: Observability (Prometheus/Grafana/Loki + VPC Flow Logs)
+    needs: [check-prerequisites]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Configure AWS credentials (OIDC, platform-bootstrap role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_PLATFORM_BOOTSTRAP_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Install session-manager-plugin
+        run: |
+          curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+
+      - name: Open SSM tunnel to the private EKS API
+        run: |
+          TARGET_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Purpose,Values=cicd-ssm-target" "Name=tag:Environment,Values=${{ inputs.target_environment }}" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" --output text)
+          aws ssm start-session \
+            --target "$TARGET_ID" \
+            --document-name AWS-StartPortForwardingSessionToRemoteHost \
+            --parameters "{\"host\":[\"$(aws eks describe-cluster --name cashonrails-aws-${{ inputs.target_environment }} --query 'cluster.endpoint' --output text | sed 's#https://##')\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"6443\"]}" \
+            > /tmp/ssm-session.log 2>&1 &
+          echo $! > /tmp/ssm-session.pid
+          for i in $(seq 1 15); do (echo > /dev/tcp/127.0.0.1/6443) >/dev/null 2>&1 && break; sleep 1; done
+
+      - name: terraform init
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: terraform apply (observability only)
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: |
+          terraform apply -input=false -auto-approve \
+            -target='module.observability' \
+            -var="acme_email=${{ vars.ACME_EMAIL }}"
+
+      - name: Close SSM tunnel
+        if: always()
+        run: |
+          SESSION_ID=$(grep -o '"SessionId": "[^"]*"' /tmp/ssm-session.log | cut -d'"' -f4 || true)
+          [ -n "$SESSION_ID" ] && aws ssm terminate-session --session-id "$SESSION_ID" || true
+          [ -f /tmp/ssm-session.pid ] && kill "$(cat /tmp/ssm-session.pid)" 2>/dev/null || true
+
+  cert-manager:
+    name: cert-manager
+    needs: [check-prerequisites, ingress-nginx]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Configure AWS credentials (OIDC, platform-bootstrap role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_PLATFORM_BOOTSTRAP_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Install session-manager-plugin
+        run: |
+          curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+
+      - name: Open SSM tunnel to the private EKS API
+        run: |
+          TARGET_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Purpose,Values=cicd-ssm-target" "Name=tag:Environment,Values=${{ inputs.target_environment }}" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" --output text)
+          aws ssm start-session \
+            --target "$TARGET_ID" \
+            --document-name AWS-StartPortForwardingSessionToRemoteHost \
+            --parameters "{\"host\":[\"$(aws eks describe-cluster --name cashonrails-aws-${{ inputs.target_environment }} --query 'cluster.endpoint' --output text | sed 's#https://##')\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"6443\"]}" \
+            > /tmp/ssm-session.log 2>&1 &
+          echo $! > /tmp/ssm-session.pid
+          for i in $(seq 1 15); do (echo > /dev/tcp/127.0.0.1/6443) >/dev/null 2>&1 && break; sleep 1; done
+
+      - name: terraform init
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: terraform apply (cert-manager only)
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: |
+          terraform apply -input=false -auto-approve \
+            -target='module.cert_manager' \
+            -var="acme_email=${{ vars.ACME_EMAIL }}"
+
+      - name: Close SSM tunnel
+        if: always()
+        run: |
+          SESSION_ID=$(grep -o '"SessionId": "[^"]*"' /tmp/ssm-session.log | cut -d'"' -f4 || true)
+          [ -n "$SESSION_ID" ] && aws ssm terminate-session --session-id "$SESSION_ID" || true
+          [ -f /tmp/ssm-session.pid ] && kill "$(cat /tmp/ssm-session.pid)" 2>/dev/null || true
+
+  dns:
+    name: DNS (only if a real domain has been supplied)
+    needs: [check-prerequisites, cert-manager]
+    if: ${{ inputs.enable_dns == 'true' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Configure AWS credentials (OIDC, platform-bootstrap role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_PLATFORM_BOOTSTRAP_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Install session-manager-plugin
+        run: |
+          curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+
+      - name: Open SSM tunnel to the private EKS API
+        run: |
+          TARGET_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Purpose,Values=cicd-ssm-target" "Name=tag:Environment,Values=${{ inputs.target_environment }}" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" --output text)
+          aws ssm start-session \
+            --target "$TARGET_ID" \
+            --document-name AWS-StartPortForwardingSessionToRemoteHost \
+            --parameters "{\"host\":[\"$(aws eks describe-cluster --name cashonrails-aws-${{ inputs.target_environment }} --query 'cluster.endpoint' --output text | sed 's#https://##')\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"6443\"]}" \
+            > /tmp/ssm-session.log 2>&1 &
+          echo $! > /tmp/ssm-session.pid
+          for i in $(seq 1 15); do (echo > /dev/tcp/127.0.0.1/6443) >/dev/null 2>&1 && break; sleep 1; done
+
+      - name: terraform init
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      # DNS_HOSTED_ZONE_ID/DNS_RECORD_NAME are external inputs - see final report.
+      - name: terraform apply (DNS record only)
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: |
+          terraform apply -input=false -auto-approve \
+            -target='module.dns' \
+            -var="enable_dns=true" \
+            -var="dns_hosted_zone_id=${{ vars.DNS_HOSTED_ZONE_ID }}" \
+            -var="dns_record_name=${{ vars.DNS_RECORD_NAME }}" \
+            -var="acme_email=${{ vars.ACME_EMAIL }}"
+
+      - name: Close SSM tunnel
+        if: always()
+        run: |
+          SESSION_ID=$(grep -o '"SessionId": "[^"]*"' /tmp/ssm-session.log | cut -d'"' -f4 || true)
+          [ -n "$SESSION_ID" ] && aws ssm terminate-session --session-id "$SESSION_ID" || true
+          [ -f /tmp/ssm-session.pid ] && kill "$(cat /tmp/ssm-session.pid)" 2>/dev/null || true
