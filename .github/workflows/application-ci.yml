@@ -58,6 +58,7 @@ jobs:
           image-ref: cashonrails-api:ci
           severity: HIGH,CRITICAL
           exit-code: "1"
+          trivyignores: .trivyignore
 
   push-staging:
     name: Push image to staging ECR

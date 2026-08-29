@@ -1,0 +1,34 @@
+# Trivy vulnerability exceptions
+#
+# Scope: these four findings ONLY. Any other HIGH/CRITICAL finding still fails the
+# "Docker build + scan" job in .github/workflows/application-ci.yml.
+#
+# All four are transitive Go dependencies compiled into the upstream FrankenPHP
+# binary (usr/local/bin/frankenphp) via Caddy's certmagic/smallstep (ACME CA) and
+# OpenTelemetry OTLP exporter chains — not Laravel/Composer application dependencies,
+# and not something this repo's Dockerfile/Caddy config can patch directly.
+#
+# Investigated 2026-08-29: no patched FrankenPHP release exists yet. Checked both the
+# latest release (v1.12.7, 2026-08-07) and the unreleased `main` branch — both still
+# pin github.com/getkin/kin-openapi v0.140.0 and google.golang.org/grpc v1.81.1.
+#
+# Reachability: this deployment runs `frankenphp php-server` with no custom Caddyfile
+# and no OTLP/ACME/xDS/gRPC configuration anywhere in deploy/ or scripts/ (TLS is
+# terminated by ingress-nginx, not Caddy). The vulnerable code paths are compiled in
+# but not invoked by this application.
+#
+# Review by: 2026-09-28 (30 days). Re-run `docker build` + Trivy against the latest
+# dunglas/frankenphp:1-php8.4-alpine on or before this date; remove any entry once a
+# release fixes it, and re-investigate/extend only with a documented reason if not.
+
+# kin-openapi: ValidationHandler.Load() Fail-Open (fixed upstream in 0.144.0)
+GHSA-r277-6w6q-xmqw exp:2026-09-28
+
+# kin-openapi (fixed upstream in 0.141.0)
+CVE-2026-76905 exp:2026-09-28
+
+# kin-openapi (fixed upstream in 0.142.0)
+CVE-2026-77354 exp:2026-09-28
+
+# grpc-go: xDS RBAC and HTTP/2 vulnerabilities (fixed upstream in 1.82.1)
+GHSA-hrxh-6v49-42gf exp:2026-09-28
