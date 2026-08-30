@@ -47,9 +47,3 @@ variable "cicd_ssm_target_security_group_id" {
   description = "Security group ID of the CI/CD SSM deployment bridge — pass module.cicd_ssm_target.security_group_id. Allowed 443 ingress to the cluster so the deploy pipeline can reach the private API."
   type        = string
 }
-
-variable "admin_principal_arns" {
-  description = "IAM user/role ARNs to grant standing cluster-wide edit access, e.g. for personal admin use. Empty by default - not tied to any specific identity, so this stays reusable. Apply via local terraform.tfvars, not CI."
-  type        = list(string)
-  default     = []
-}

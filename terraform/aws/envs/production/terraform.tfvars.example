@@ -27,5 +27,8 @@ rds_allocated_storage = 20
 rds_multi_az                = false
 rds_backup_retention_period = 1
 
-# Standing personal cluster access (Edit policy, cluster-scoped) — set this locally, never in CI.
-# admin_principal_arns = ["arn:aws:iam::<account-id>:user/<your-iam-user>"]
+# Standing personal cluster access moved to its own isolated Terraform state -
+# see envs/staging/admin-access/terraform.tfvars.example for the pattern. It no
+# longer lives in this root because this root is fully reconciled by CI
+# (eks-core.yml), which would silently delete a personal-only entry it has no
+# config for.
