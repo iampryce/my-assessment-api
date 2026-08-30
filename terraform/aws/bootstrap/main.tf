@@ -760,6 +760,17 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     ]
   }
 
+  # CreateFlowLogs applies tags via a separate call, not inline.
+  statement {
+    sid    = "VpcFlowLogsTagging"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateTags",
+      "ec2:DeleteTags",
+    ]
+    resources = ["arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:vpc-flow-log/*"]
+  }
+
   statement {
     sid       = "VpcFlowLogsReadback"
     effect    = "Allow"
@@ -803,6 +814,7 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
       "iam:GetRolePolicy",
       "iam:ListRolePolicies",
       "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
     ]
     resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/cashonrails-aws-*-vpc-flow-logs"]
   }

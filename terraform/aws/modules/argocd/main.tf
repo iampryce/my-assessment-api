@@ -8,6 +8,9 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 3.0"
     }
+    time = {
+      source = "hashicorp/time"
+    }
   }
 }
 
@@ -51,4 +54,20 @@ resource "helm_release" "this" {
       value = "false"
     },
   ]
+}
+
+# Same eventual-consistency handling as modules/cert-manager: kubernetes_manifest computes the
+# Application CRD's schema at plan time, so a fresh terraform apply must run after the CRDs
+# actually exist (see platform-addons.yml's two-phase apply for this job).
+resource "time_sleep" "wait_for_crds" {
+  depends_on      = [helm_release.this]
+  create_duration = "30s"
+}
+
+# Tells Argo CD to sync deploy/helm/cashonrails-api into this environment's cluster - without
+# this, Argo CD is installed but manages nothing, and the app's own namespace never gets created.
+resource "kubernetes_manifest" "cashonrails_api" {
+  manifest = yamldecode(file("${path.module}/../../../../deploy/argocd-apps/${var.environment}/application.yaml"))
+
+  depends_on = [time_sleep.wait_for_crds]
 }
