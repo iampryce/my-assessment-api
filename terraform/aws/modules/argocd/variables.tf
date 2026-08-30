@@ -19,3 +19,27 @@ variable "chart_version" {
   type        = string
   default     = "7.7.11"
 }
+
+variable "enable_ingress" {
+  description = "Whether to expose Argo CD via a public, basic-auth-protected Ingress instead of SSM-tunnel-only access."
+  type        = bool
+  default     = false
+}
+
+variable "ingress_host" {
+  description = "Hostname for the Argo CD Ingress - required only if enable_ingress is true."
+  type        = string
+  default     = ""
+}
+
+variable "cluster_issuer_name" {
+  description = "cert-manager ClusterIssuer name for the Ingress TLS - required only if enable_ingress is true."
+  type        = string
+  default     = ""
+}
+
+variable "ingress_class_name" {
+  description = "IngressClass routing traffic to the Ingress."
+  type        = string
+  default     = "nginx"
+}

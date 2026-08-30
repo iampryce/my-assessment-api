@@ -9,3 +9,8 @@ image:
 
 config:
   APP_ENV: "staging"
+
+ingress:
+  enabled: true
+  clusterIssuer: letsencrypt-staging
+  host: api.staging.cashonrails.rivetrecords.online

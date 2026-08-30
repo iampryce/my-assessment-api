@@ -30,3 +30,21 @@ output "grafana_service_name" {
   description = "Port-forward with: kubectl port-forward -n observability svc/<this> 3000:80"
   value       = module.observability.grafana_service_name
 }
+
+output "argocd_ingress_basic_auth_username" {
+  value = var.enable_admin_ingress ? module.argocd.ingress_basic_auth_username : null
+}
+
+output "argocd_ingress_basic_auth_password" {
+  sensitive = true
+  value     = var.enable_admin_ingress ? module.argocd.ingress_basic_auth_password : null
+}
+
+output "grafana_ingress_basic_auth_username" {
+  value = var.enable_admin_ingress ? module.observability.grafana_ingress_basic_auth_username : null
+}
+
+output "grafana_ingress_basic_auth_password" {
+  sensitive = true
+  value     = var.enable_admin_ingress ? module.observability.grafana_ingress_basic_auth_password : null
+}

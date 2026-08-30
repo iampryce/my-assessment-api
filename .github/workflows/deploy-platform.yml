@@ -19,6 +19,11 @@ on:
         required: false
         type: boolean
         default: false
+      enable_admin_ingress:
+        description: "Expose Argo CD/Grafana via basic-auth-protected Ingresses (requires enable_dns too)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -55,4 +60,5 @@ jobs:
     with:
       target_environment: ${{ inputs.target_environment }}
       enable_dns: ${{ inputs.enable_dns }}
+      enable_admin_ingress: ${{ inputs.enable_admin_ingress }}
     secrets: inherit

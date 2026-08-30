@@ -714,13 +714,20 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     sid    = "DnsRecordManagement"
     effect = "Allow"
     actions = [
-      "route53:CreateHostedZone",
-      "route53:DeleteHostedZone",
       "route53:GetHostedZone",
       "route53:ListResourceRecordSets",
       "route53:ChangeResourceRecordSets",
+      "route53:ListTagsForResource",
     ]
     resources = ["arn:aws:route53:::hostedzone/*"]
+  }
+
+  # CreateHostedZone doesn't support resource-level scoping at all (confirmed via AccessDenied - no resource ARN cited).
+  statement {
+    sid       = "DnsZoneLifecycle"
+    effect    = "Allow"
+    actions   = ["route53:CreateHostedZone", "route53:DeleteHostedZone"]
+    resources = ["*"]
   }
 
   statement {

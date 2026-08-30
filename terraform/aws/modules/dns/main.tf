@@ -23,3 +23,14 @@ resource "aws_route53_record" "this" {
   ttl     = var.ttl
   records = [var.target_hostname]
 }
+
+# Extra hostnames in the same zone (e.g. Argo CD/Grafana dashboards) - keyed by subdomain label.
+resource "aws_route53_record" "additional" {
+  for_each = var.additional_records
+
+  zone_id = aws_route53_zone.this.zone_id
+  name    = "${each.key}.${var.zone_name}"
+  type    = "CNAME"
+  ttl     = var.ttl
+  records = [each.value]
+}
