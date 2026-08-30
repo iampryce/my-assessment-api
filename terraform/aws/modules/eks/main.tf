@@ -54,7 +54,7 @@ module "eks" {
   # Cluster-scoped access for the platform-bootstrap role only, to install Argo CD/ingress-nginx/
   # cert-manager - all of which need to create CRDs, ClusterRoles/ClusterRoleBindings, and their
   # own namespaces, none of which AmazonEKSEditPolicy (namespace-scoped) permits.
-  access_entries = {
+  access_entries = merge({
     app_cicd = {
       principal_arn = local.app_cicd_role_arn
       policy_associations = {
@@ -78,7 +78,19 @@ module "eks" {
         }
       }
     }
-  }
+    }, {
+    for idx, arn in var.admin_principal_arns : "admin_${idx}" => {
+      principal_arn = arn
+      policy_associations = {
+        edit = {
+          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy"
+          access_scope = {
+            type = "cluster"
+          }
+        }
+      }
+    }
+  })
 
   eks_managed_node_groups = {
     default = {

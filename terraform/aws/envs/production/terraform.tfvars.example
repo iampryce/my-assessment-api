@@ -26,3 +26,6 @@ rds_allocated_storage = 20
 
 rds_multi_az                = false
 rds_backup_retention_period = 1
+
+# Standing personal cluster access (Edit policy, cluster-scoped) — set this locally, never in CI.
+# admin_principal_arns = ["arn:aws:iam::<account-id>:user/<your-iam-user>"]
