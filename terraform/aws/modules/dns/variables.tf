@@ -28,3 +28,9 @@ variable "ttl" {
   type        = number
   default     = 300
 }
+
+variable "additional_records" {
+  description = "Extra CNAME records in the same zone, keyed by subdomain label (e.g. \"argocd\" creates argocd.<zone_name>) with the target hostname as the value."
+  type        = map(string)
+  default     = {}
+}

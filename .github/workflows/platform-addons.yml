@@ -16,6 +16,11 @@ on:
         required: false
         type: boolean
         default: false
+      enable_admin_ingress:
+        description: "Expose Argo CD/Grafana via basic-auth-protected Ingresses (requires enable_dns too)"
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       target_environment:
@@ -24,6 +29,11 @@ on:
         type: string
       enable_dns:
         description: "Also apply the DNS record (requires a real hosted zone already supplied via tfvars)"
+        required: false
+        type: boolean
+        default: false
+      enable_admin_ingress:
+        description: "Expose Argo CD/Grafana via basic-auth-protected Ingresses (requires enable_dns too)"
         required: false
         type: boolean
         default: false
@@ -112,14 +122,18 @@ jobs:
             -target='module.argocd.kubernetes_namespace_v1.this' \
             -target='module.argocd.helm_release.this' \
             -target='module.argocd.time_sleep.wait_for_crds' \
-            -var="acme_email=${{ secrets.ACME_EMAIL }}"
+            -var="acme_email=${{ secrets.ACME_EMAIL }}" \
+            -var="enable_admin_ingress=${{ inputs.enable_admin_ingress }}" \
+            -var="dns_zone_name=${{ vars.DNS_ZONE_NAME }}"
 
       - name: terraform apply (Argo CD - Application)
         working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
         run: |
           terraform apply -input=false -auto-approve -lock-timeout=300s \
             -target='module.argocd' \
-            -var="acme_email=${{ secrets.ACME_EMAIL }}"
+            -var="acme_email=${{ secrets.ACME_EMAIL }}" \
+            -var="enable_admin_ingress=${{ inputs.enable_admin_ingress }}" \
+            -var="dns_zone_name=${{ vars.DNS_ZONE_NAME }}"
 
       - name: Close SSM tunnel
         if: always()
@@ -231,7 +245,9 @@ jobs:
         run: |
           terraform apply -input=false -auto-approve -lock-timeout=300s \
             -target='module.observability' \
-            -var="acme_email=${{ secrets.ACME_EMAIL }}"
+            -var="acme_email=${{ secrets.ACME_EMAIL }}" \
+            -var="enable_admin_ingress=${{ inputs.enable_admin_ingress }}" \
+            -var="dns_zone_name=${{ vars.DNS_ZONE_NAME }}"
 
       - name: Close SSM tunnel
         if: always()
@@ -362,7 +378,8 @@ jobs:
             -var="enable_dns=true" \
             -var="dns_zone_name=${{ vars.DNS_ZONE_NAME }}" \
             -var="dns_record_name=${{ vars.DNS_RECORD_NAME }}" \
-            -var="acme_email=${{ secrets.ACME_EMAIL }}"
+            -var="acme_email=${{ secrets.ACME_EMAIL }}" \
+            -var="enable_admin_ingress=${{ inputs.enable_admin_ingress }}"
 
       - name: Close SSM tunnel
         if: always()

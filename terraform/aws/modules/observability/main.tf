@@ -11,6 +11,9 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 3.0"
     }
+    random = {
+      source = "hashicorp/random"
+    }
   }
 }
 
@@ -178,4 +181,72 @@ resource "aws_flow_log" "this" {
     Project     = "cashonrails-assessment"
     Purpose     = "aws-validation"
   }
+}
+
+################################################################################
+# Optional public Ingress for Grafana - second auth layer on top of its own login
+################################################################################
+
+resource "random_password" "grafana_basic_auth" {
+  count   = var.enable_ingress ? 1 : 0
+  length  = 24
+  special = false
+}
+
+resource "kubernetes_secret_v1" "grafana_basic_auth" {
+  count = var.enable_ingress ? 1 : 0
+
+  metadata {
+    name      = "grafana-basic-auth"
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
+  }
+
+  data = {
+    auth = "admin:${bcrypt(random_password.grafana_basic_auth[0].result)}"
+  }
+}
+
+# Grafana's chart service serves plain HTTP on port 80 - no backend-protocol override needed.
+resource "kubernetes_ingress_v1" "grafana" {
+  count = var.enable_ingress ? 1 : 0
+
+  metadata {
+    name      = "grafana"
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
+    annotations = {
+      "cert-manager.io/cluster-issuer"               = var.cluster_issuer_name
+      "nginx.ingress.kubernetes.io/auth-type"        = "basic"
+      "nginx.ingress.kubernetes.io/auth-secret"      = kubernetes_secret_v1.grafana_basic_auth[0].metadata[0].name
+      "nginx.ingress.kubernetes.io/auth-secret-type" = "auth-file"
+    }
+  }
+
+  spec {
+    ingress_class_name = var.ingress_class_name
+
+    tls {
+      hosts       = [var.ingress_host]
+      secret_name = "grafana-ingress-tls"
+    }
+
+    rule {
+      host = var.ingress_host
+      http {
+        path {
+          path      = "/"
+          path_type = "Prefix"
+          backend {
+            service {
+              name = "kube-prometheus-stack-grafana"
+              port {
+                number = 80
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [helm_release.kube_prometheus_stack]
 }

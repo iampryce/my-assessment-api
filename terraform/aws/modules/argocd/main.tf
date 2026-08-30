@@ -11,6 +11,9 @@ terraform {
     time = {
       source = "hashicorp/time"
     }
+    random = {
+      source = "hashicorp/random"
+    }
   }
 }
 
@@ -24,9 +27,9 @@ resource "kubernetes_namespace_v1" "this" {
   }
 }
 
-# Installed via the platform-bootstrap identity (cluster-scoped EKS access entry) - see
-# modules/eks. Never exposed publicly: server.service.type stays ClusterIP, reached only through
-# the SSM tunnel (kubectl port-forward/proxy), same as the Kubernetes API itself.
+# Installed via the platform-bootstrap identity (cluster-scoped EKS access entry) - see modules/eks.
+# ClusterIP by default (SSM-tunnel-only access); enable_ingress below adds a basic-auth-protected
+# public Ingress on top without changing this Service.
 resource "helm_release" "this" {
   name       = "argocd"
   repository = "https://argoproj.github.io/argo-helm"
@@ -70,4 +73,71 @@ resource "kubernetes_manifest" "cashonrails_api" {
   manifest = yamldecode(file("${path.module}/../../../../deploy/argocd-apps/${var.environment}/application.yaml"))
 
   depends_on = [time_sleep.wait_for_crds]
+}
+
+# Second auth layer in front of Argo CD's own login - random per apply, never stored in git.
+resource "random_password" "basic_auth" {
+  count   = var.enable_ingress ? 1 : 0
+  length  = 24
+  special = false
+}
+
+resource "kubernetes_secret_v1" "basic_auth" {
+  count = var.enable_ingress ? 1 : 0
+
+  metadata {
+    name      = "argocd-basic-auth"
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
+  }
+
+  data = {
+    auth = "admin:${bcrypt(random_password.basic_auth[0].result)}"
+  }
+}
+
+# server.insecure=false above means argocd-server serves its own TLS internally - backend-protocol
+# HTTPS tells nginx to connect over TLS to it, while cert-manager terminates the public-facing TLS.
+resource "kubernetes_ingress_v1" "this" {
+  count = var.enable_ingress ? 1 : 0
+
+  metadata {
+    name      = "argocd-server"
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
+    annotations = {
+      "cert-manager.io/cluster-issuer"               = var.cluster_issuer_name
+      "nginx.ingress.kubernetes.io/auth-type"        = "basic"
+      "nginx.ingress.kubernetes.io/auth-secret"      = kubernetes_secret_v1.basic_auth[0].metadata[0].name
+      "nginx.ingress.kubernetes.io/auth-secret-type" = "auth-file"
+      "nginx.ingress.kubernetes.io/backend-protocol" = "HTTPS"
+    }
+  }
+
+  spec {
+    ingress_class_name = var.ingress_class_name
+
+    tls {
+      hosts       = [var.ingress_host]
+      secret_name = "argocd-ingress-tls"
+    }
+
+    rule {
+      host = var.ingress_host
+      http {
+        path {
+          path      = "/"
+          path_type = "Prefix"
+          backend {
+            service {
+              name = "argocd-server"
+              port {
+                name = "https"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [helm_release.this]
 }

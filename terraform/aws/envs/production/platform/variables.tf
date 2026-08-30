@@ -32,3 +32,9 @@ variable "dns_record_name" {
   type        = string
   default     = ""
 }
+
+variable "enable_admin_ingress" {
+  description = "Whether to expose Argo CD and Grafana via public, basic-auth-protected Ingresses. Requires enable_dns=true too - their hostnames live in the same zone."
+  type        = bool
+  default     = false
+}
