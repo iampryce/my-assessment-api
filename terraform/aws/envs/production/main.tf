@@ -38,6 +38,7 @@ module "eks" {
   node_max_size      = var.node_max_size
 
   cicd_ssm_target_security_group_id = module.cicd_ssm_target.security_group_id
+  admin_principal_arns              = var.admin_principal_arns
 }
 
 module "rds" {
