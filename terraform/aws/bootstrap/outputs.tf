@@ -29,6 +29,6 @@ output "github_app_cicd_role_arn" {
 }
 
 output "github_platform_bootstrap_role_arn" {
-  description = "IAM role ARN for installing/upgrading the cluster platform layer (Argo CD, ingress-nginx, cert-manager). Gated behind the \"platform\" GitHub Environment; separate from both the infra-apply and app-cicd roles."
+  description = "IAM role ARN for installing/upgrading the cluster platform layer (Argo CD, ingress-nginx, cert-manager). Gated behind the staging/production GitHub Environments, same as github_apply; separate from both the infra-apply and app-cicd roles."
   value       = aws_iam_role.github_platform_bootstrap.arn
 }

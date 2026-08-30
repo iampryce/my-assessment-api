@@ -341,14 +341,14 @@ jobs:
         working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
         run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
 
-      # DNS_HOSTED_ZONE_ID/DNS_RECORD_NAME are external inputs - see final report.
+      # DNS_ZONE_NAME/DNS_RECORD_NAME differ per environment - set as environment variables, not repo-level.
       - name: terraform apply (DNS record only)
         working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
         run: |
           terraform apply -input=false -auto-approve -lock-timeout=300s \
             -target='module.dns' \
             -var="enable_dns=true" \
-            -var="dns_hosted_zone_id=${{ vars.DNS_HOSTED_ZONE_ID }}" \
+            -var="dns_zone_name=${{ vars.DNS_ZONE_NAME }}" \
             -var="dns_record_name=${{ vars.DNS_RECORD_NAME }}" \
             -var="acme_email=${{ secrets.ACME_EMAIL }}"
 

@@ -714,6 +714,8 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     sid    = "DnsRecordManagement"
     effect = "Allow"
     actions = [
+      "route53:CreateHostedZone",
+      "route53:DeleteHostedZone",
       "route53:GetHostedZone",
       "route53:ListResourceRecordSets",
       "route53:ChangeResourceRecordSets",
@@ -726,6 +728,22 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     effect    = "Allow"
     actions   = ["route53:GetChange"]
     resources = ["arn:aws:route53:::change/*"] # change IDs are assigned by AWS at request time, unknowable ahead of time
+  }
+
+  # Observability module's own tag-based VPC lookup (data "aws_vpc" "this").
+  statement {
+    sid       = "VpcDiscoveryForObservability"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeVpcs"]
+    resources = ["*"] # bulk/filterable Describe action, same class as DescribeInstanceTypes
+  }
+
+  # Same data source also reads per-attribute fields (e.g. enableDnsHostnames) via a separate call.
+  statement {
+    sid       = "VpcAttributeReadbackForObservability"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeVpcAttribute"]
+    resources = ["arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:vpc/*"]
   }
 
   # Observability module's VPC Flow Logs - scoped to the VPC logged and the flow-log resource created.
@@ -784,6 +802,7 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
       "iam:DeleteRolePolicy",
       "iam:GetRolePolicy",
       "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
     ]
     resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/cashonrails-aws-*-vpc-flow-logs"]
   }

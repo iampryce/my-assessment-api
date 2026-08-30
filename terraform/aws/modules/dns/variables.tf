@@ -8,19 +8,13 @@ variable "environment" {
   }
 }
 
-variable "hosted_zone_id" {
-  description = <<-EOT
-    Route53 hosted zone ID that owns the domain this environment's hostname is created under.
-    No default: this project does not currently own a delegated domain. Do not point this at an
-    unrelated pre-existing zone in the account - supply a real, CashOnRails-owned zone ID once one
-    exists. Until then, leave this module uninstantiated (see runbook - this is an external
-    prerequisite, not something to fake).
-  EOT
+variable "zone_name" {
+  description = "Subdomain to create a dedicated Route53 zone for, e.g. \"staging.cashonrails.example.com\". This module creates the zone itself - no default, this is a real domain you control, not a placeholder. Delegate it at the registrar using this module's zone_name_servers output."
   type        = string
 }
 
 variable "record_name" {
-  description = "Fully-qualified hostname to create, e.g. \"api.staging.<domain>\" or \"api.<domain>\"."
+  description = "Fully-qualified hostname to create inside the zone, e.g. \"api.staging.<domain>\". Must be zone_name itself or a subdomain of it - not the zone's own apex, since a CNAME can't share a name with the zone's NS/SOA records."
   type        = string
 }
 
