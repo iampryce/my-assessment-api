@@ -108,7 +108,7 @@ jobs:
         run: |
           terraform apply -input=false -auto-approve -lock-timeout=300s \
             -target='module.argocd' \
-            -var="acme_email=${{ vars.ACME_EMAIL }}"
+            -var="acme_email=${{ secrets.ACME_EMAIL }}"
 
       - name: Close SSM tunnel
         if: always()
@@ -164,7 +164,7 @@ jobs:
         run: |
           terraform apply -input=false -auto-approve -lock-timeout=300s \
             -target='module.ingress_nginx' \
-            -var="acme_email=${{ vars.ACME_EMAIL }}"
+            -var="acme_email=${{ secrets.ACME_EMAIL }}"
 
       - name: Close SSM tunnel
         if: always()
@@ -220,7 +220,7 @@ jobs:
         run: |
           terraform apply -input=false -auto-approve -lock-timeout=300s \
             -target='module.observability' \
-            -var="acme_email=${{ vars.ACME_EMAIL }}"
+            -var="acme_email=${{ secrets.ACME_EMAIL }}"
 
       - name: Close SSM tunnel
         if: always()
@@ -271,12 +271,23 @@ jobs:
         working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
         run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
 
-      - name: terraform apply (cert-manager only)
+      # Two apply invocations: kubernetes_manifest computes the ClusterIssuer CRD's schema at plan
+      # time, so a fresh process must start after the CRDs actually exist - depends_on/time_sleep
+      # alone don't help since they only affect apply ordering, not schema discovery.
+      - name: terraform apply (cert-manager - CRDs first)
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: |
+          terraform apply -input=false -auto-approve \
+            -target='module.cert_manager.helm_release.this' \
+            -target='module.cert_manager.time_sleep.wait_for_crds' \
+            -var="acme_email=${{ secrets.ACME_EMAIL }}"
+
+      - name: terraform apply (cert-manager - ClusterIssuer)
         working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
         run: |
           terraform apply -input=false -auto-approve \
             -target='module.cert_manager' \
-            -var="acme_email=${{ vars.ACME_EMAIL }}"
+            -var="acme_email=${{ secrets.ACME_EMAIL }}"
 
       - name: Close SSM tunnel
         if: always()
@@ -337,7 +348,7 @@ jobs:
             -var="enable_dns=true" \
             -var="dns_hosted_zone_id=${{ vars.DNS_HOSTED_ZONE_ID }}" \
             -var="dns_record_name=${{ vars.DNS_RECORD_NAME }}" \
-            -var="acme_email=${{ vars.ACME_EMAIL }}"
+            -var="acme_email=${{ secrets.ACME_EMAIL }}"
 
       - name: Close SSM tunnel
         if: always()
