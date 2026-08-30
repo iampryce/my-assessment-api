@@ -17,6 +17,11 @@ output "dns_fqdn" {
   value       = var.enable_dns ? module.dns[0].fqdn : null
 }
 
+output "dns_zone_name_servers" {
+  description = "Add these as NS records for dns_zone_name at the registrar."
+  value       = var.enable_dns ? module.dns[0].zone_name_servers : null
+}
+
 output "observability_namespace" {
   value = module.observability.namespace
 }

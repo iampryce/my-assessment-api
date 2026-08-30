@@ -364,6 +364,10 @@ jobs:
             -var="dns_record_name=${{ vars.DNS_RECORD_NAME }}" \
             -var="acme_email=${{ secrets.ACME_EMAIL }}"
 
+      - name: Show name servers to delegate at the registrar
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: terraform output dns_zone_name_servers
+
       - name: Close SSM tunnel
         if: always()
         run: |
