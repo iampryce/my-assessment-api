@@ -5,7 +5,7 @@ environment: staging
 # itself sourced from the staging Terraform output ecr_repository_url) — not guessed.
 image:
   repository: "494472951824.dkr.ecr.us-east-1.amazonaws.com/cashonrails-aws-staging"
-  tag: "48fe3ca3cf252e4b6a4e84bcb7c1e7ba39fcec45" # overwritten by CI on every deploy; never :latest
+  tag: "c49c841839b3a92292bd86b171ec8c08fbfe7875" # overwritten by CI on every deploy; never :latest
 
 config:
   APP_ENV: "staging"
