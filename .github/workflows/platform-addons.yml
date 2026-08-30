@@ -364,13 +364,39 @@ jobs:
             -var="dns_record_name=${{ vars.DNS_RECORD_NAME }}" \
             -var="acme_email=${{ secrets.ACME_EMAIL }}"
 
-      - name: Show name servers to delegate at the registrar
-        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
-        run: terraform output dns_zone_name_servers
-
       - name: Close SSM tunnel
         if: always()
         run: |
           SESSION_ID=$(grep -o '"SessionId": "[^"]*"' /tmp/ssm-session.log | cut -d'"' -f4 || true)
           [ -n "$SESSION_ID" ] && aws ssm terminate-session --session-id "$SESSION_ID" || true
           [ -f /tmp/ssm-session.pid ] && kill "$(cat /tmp/ssm-session.pid)" 2>/dev/null || true
+
+  # Always runs, even if some jobs above failed - terraform output only reads state, no SSM tunnel needed.
+  summary:
+    name: Platform summary
+    needs: [argocd, ingress-nginx, observability, cert-manager, dns]
+    if: always()
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Configure AWS credentials (OIDC, platform-bootstrap role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_PLATFORM_BOOTSTRAP_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: terraform init
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: terraform output
+        working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
+        run: terraform output
