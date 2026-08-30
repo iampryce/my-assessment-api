@@ -67,7 +67,12 @@ module "eks" {
   # Cluster-scoped access for the platform-bootstrap role only, to install Argo CD/ingress-nginx/
   # cert-manager - all of which need to create CRDs, ClusterRoles/ClusterRoleBindings, and their
   # own namespaces, none of which AmazonEKSEditPolicy (namespace-scoped) permits.
-  access_entries = merge({
+  # Personal/admin access entries deliberately do NOT live here - this module is fully
+  # reconciled by CI (eks-core.yml) on every dispatch, and a local-only value (like an
+  # individual operator's admin_principal_arns used to be) gets silently deleted the
+  # next time CI applies with that variable at its empty default. See
+  # terraform/aws/envs/staging/admin-access for the isolated-state home for those.
+  access_entries = {
     app_cicd = {
       principal_arn = local.app_cicd_role_arn
       policy_associations = {
@@ -91,19 +96,7 @@ module "eks" {
         }
       }
     }
-    }, {
-    for idx, arn in var.admin_principal_arns : "admin_${idx}" => {
-      principal_arn = arn
-      policy_associations = {
-        edit = {
-          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy"
-          access_scope = {
-            type = "cluster"
-          }
-        }
-      }
-    }
-  })
+  }
 
   eks_managed_node_groups = {
     default = {

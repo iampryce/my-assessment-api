@@ -87,8 +87,5 @@ variable "cicd_ssm_target_ami_id" {
   default     = "ami-0332d564d76dbd8d6"
 }
 
-variable "admin_principal_arns" {
-  description = "IAM user/role ARNs to grant standing cluster-wide EKS edit access. Empty by default; set via local terraform.tfvars, not CI."
-  type        = list(string)
-  default     = []
-}
+
+
