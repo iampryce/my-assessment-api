@@ -551,9 +551,7 @@ data "aws_iam_policy_document" "github_app_cicd_custom" {
     resources = ["*"] # bulk-enumeration action, no resource-level scoping - same class as other unscoped Describe* actions in this policy
   }
 
-  # Split in two: the resourceTag condition only makes sense for the instance resource - an
-  # AWS-owned public document has no tags of ours, so sharing one condition across both resources
-  # in a single statement made the whole statement fail to match the document (implicit deny).
+  # Split in two - the tag condition only applies to the instance; the AWS-owned document has no tags.
   statement {
     sid     = "StartSessionToCicdSsmTargetInstance"
     effect  = "Allow"
@@ -619,9 +617,7 @@ data "aws_iam_policy_document" "github_platform_bootstrap_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      # No GitHub Environment named "platform" exists - platform-addons.yml's jobs use
-      # environment: ${{ inputs.target_environment }} (staging/production), same as github_apply,
-      # so this must match those, not a "platform" environment that was never created.
+      # No GitHub Environment named "platform" exists - matches staging/production like github_apply does.
       values = [
         "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:staging",
         "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:production",
@@ -653,9 +649,7 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     resources = ["*"] # bulk-enumeration action, no resource-level scoping - same class as other unscoped Describe* actions in this policy
   }
 
-  # Split in two: the resourceTag condition only makes sense for the instance resource - an
-  # AWS-owned public document has no tags of ours, so sharing one condition across both resources
-  # in a single statement made the whole statement fail to match the document (implicit deny).
+  # Split in two - the tag condition only applies to the instance; the AWS-owned document has no tags.
   statement {
     sid     = "StartSessionToCicdSsmTargetInstance"
     effect  = "Allow"
@@ -684,9 +678,7 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     resources = ["arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:session/GitHubActions-*"]
   }
 
-  # Platform-layer state lives at a dedicated key (envs/*/platform/backend.tf), separate from the
-  # infra-layer state the apply role owns - literal known keys, not a wildcard prefix, since this
-  # role should never be able to touch envs/*'s own terraform.tfstate.
+  # Platform-layer state only - literal keys, not a wildcard, so this role can't touch envs/*'s own state.
   statement {
     sid    = "PlatformStateBucketList"
     effect = "Allow"
@@ -717,10 +709,7 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     ]
   }
 
-  # DNS module (terraform/aws/modules/dns) manages a single aws_route53_record. hosted_zone_id is
-  # an external prerequisite this project does not yet own (see the module's variables.tf) so the
-  # specific zone ARN can't be pinned here - scoped to the hostedzone resource type, not all of
-  # route53:*.
+  # Real hosted_zone_id isn't known yet (no domain owned), so scoped to the resource type, not all of route53:*.
   statement {
     sid    = "DnsRecordManagement"
     effect = "Allow"
@@ -739,8 +728,7 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     resources = ["arn:aws:route53:::change/*"] # change IDs are assigned by AWS at request time, unknowable ahead of time
   }
 
-  # Observability module (terraform/aws/modules/observability) VPC Flow Logs -> CloudWatch Logs.
-  # aws_flow_log itself, scoped to the VPC being logged and the flow-log resource it creates.
+  # Observability module's VPC Flow Logs - scoped to the VPC logged and the flow-log resource created.
   statement {
     sid    = "VpcFlowLogsLifecycle"
     effect = "Allow"
@@ -782,8 +770,7 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     resources = ["*"] # this action does not support resource-level scoping (same class as LogsDescribeReadback on the apply role)
   }
 
-  # Delivery role the module creates for the flow log to assume (cashonrails-aws-{environment}-vpc-flow-logs),
-  # plus its inline delivery policy. Scoped to that exact role-name pattern only.
+  # The flow log's delivery role + inline policy - scoped to that exact role-name pattern only.
   statement {
     sid    = "VpcFlowLogsDeliveryRoleLifecycle"
     effect = "Allow"
@@ -801,8 +788,7 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/cashonrails-aws-*-vpc-flow-logs"]
   }
 
-  # ec2:CreateFlowLogs passes this role to the vpc-flow-logs service - PassRole is required for that,
-  # narrowed to only the flow-logs delivery role and only when passed to that specific service.
+  # PassRole for CreateFlowLogs, narrowed to this role and only when passed to the flow-logs service.
   statement {
     sid    = "PassFlowLogsDeliveryRole"
     effect = "Allow"

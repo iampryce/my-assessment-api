@@ -102,10 +102,7 @@ jobs:
         working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
         run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
 
-      # acme_email is a required root variable, so every job needs it, not just cert-manager.
-      # This job, ingress-nginx, and observability run in parallel against the same state file -
-      # lock-timeout makes each one wait its turn for the S3 native lock instead of failing
-      # immediately with "Error acquiring the state lock".
+      # acme_email is required by every job here, not just cert-manager; lock-timeout avoids racing ingress-nginx/observability.
       - name: terraform apply (Argo CD only)
         working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
         run: |
