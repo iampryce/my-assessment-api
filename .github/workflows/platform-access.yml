@@ -1,5 +1,6 @@
 # Layer: Platform Access - EKS access entries for app-cicd and platform-bootstrap. Idempotent, safe to re-run.
 # Depends on: bootstrap IAM (applied manually) + EKS Core already applied.
+# Dispatchable standalone, or called by deploy-platform.yml as the third chained layer.
 
 name: Platform Access
 
@@ -11,6 +12,12 @@ on:
         required: true
         type: choice
         options: [staging, production]
+  workflow_call:
+    inputs:
+      target_environment:
+        description: "Which environment to plan/apply"
+        required: true
+        type: string
 
 permissions:
   contents: read

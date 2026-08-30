@@ -1,0 +1,58 @@
+# Orchestrator: runs the 4 platform layers in sequence, each waiting for the previous one to
+# finish (needs:), for one environment. Bootstrap IAM is deliberately excluded - see
+# platform-bootstrap.yml's own header comment and terraform/aws/REMEDIATION_STATE.md; that layer
+# stays a manual apply. Each layer below is also independently dispatchable via its own
+# workflow_dispatch trigger - this file only adds a second way to run all four back-to-back.
+
+name: Deploy Platform (all layers)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Which environment to deploy through all 4 layers"
+        required: true
+        type: choice
+        options: [staging, production]
+      enable_dns:
+        description: "Also apply the DNS record in the add-ons layer (requires a real hosted zone already supplied via tfvars)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  foundation:
+    name: "Layer 1: AWS Foundation"
+    uses: ./.github/workflows/aws-foundation.yml
+    with:
+      target_environment: ${{ inputs.target_environment }}
+    secrets: inherit
+
+  eks-core:
+    name: "Layer 2: EKS Core"
+    needs: [foundation]
+    uses: ./.github/workflows/eks-core.yml
+    with:
+      target_environment: ${{ inputs.target_environment }}
+    secrets: inherit
+
+  platform-access:
+    name: "Layer 3: Platform Access"
+    needs: [eks-core]
+    uses: ./.github/workflows/platform-access.yml
+    with:
+      target_environment: ${{ inputs.target_environment }}
+    secrets: inherit
+
+  platform-addons:
+    name: "Layer 4: Platform Add-ons"
+    needs: [platform-access]
+    uses: ./.github/workflows/platform-addons.yml
+    with:
+      target_environment: ${{ inputs.target_environment }}
+      enable_dns: ${{ inputs.enable_dns }}
+    secrets: inherit

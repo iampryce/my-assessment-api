@@ -1,5 +1,6 @@
 # Layer: EKS Core - cluster, node group, add-ons, and RDS (RDS depends on EKS's node SG - see final report).
 # Depends on: AWS Foundation already applied.
+# Dispatchable standalone, or called by deploy-platform.yml as the second chained layer.
 
 name: EKS Core
 
@@ -11,6 +12,12 @@ on:
         required: true
         type: choice
         options: [staging, production]
+  workflow_call:
+    inputs:
+      target_environment:
+        description: "Which environment to plan/apply"
+        required: true
+        type: string
 
 permissions:
   contents: read
