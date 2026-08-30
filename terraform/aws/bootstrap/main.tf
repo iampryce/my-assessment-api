@@ -312,6 +312,36 @@ data "aws_iam_policy_document" "github_apply_custom" {
   }
 
   statement {
+    sid       = "Ec2InstanceTypeReadbackForSsmTarget"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeInstanceTypes"]
+    resources = ["*"] # this action does not support resource-level scoping
+  }
+
+  statement {
+    sid     = "Ec2InstanceAttributeReadbackForSsmTarget"
+    effect  = "Allow"
+    actions = ["ec2:DescribeInstanceAttribute"] # single action covers all per-attribute reads (shutdown behavior, userData, etc.)
+    resources = [
+      "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:instance/*",
+    ]
+  }
+
+  statement {
+    sid       = "Ec2InstanceCreditSpecReadbackForSsmTarget"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeInstanceCreditSpecifications"]
+    resources = ["*"] # bulk/filterable Describe action, same class as DescribeInstanceTypes - t3.micro is burstable so this is read every refresh
+  }
+
+  statement {
+    sid       = "Ec2VolumeReadbackForSsmTarget"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeVolumes"]
+    resources = ["*"] # bulk/filterable Describe action, same class as DescribeInstanceTypes - reads the instance's root_block_device
+  }
+
+  statement {
     sid    = "Ec2LaunchTemplateCreate"
     effect = "Allow"
     actions = [
@@ -521,19 +551,28 @@ data "aws_iam_policy_document" "github_app_cicd_custom" {
     resources = ["*"] # bulk-enumeration action, no resource-level scoping - same class as other unscoped Describe* actions in this policy
   }
 
+  # Split in two: the resourceTag condition only makes sense for the instance resource - an
+  # AWS-owned public document has no tags of ours, so sharing one condition across both resources
+  # in a single statement made the whole statement fail to match the document (implicit deny).
   statement {
-    sid     = "StartSessionToCicdSsmTarget"
+    sid     = "StartSessionToCicdSsmTargetInstance"
     effect  = "Allow"
     actions = ["ssm:StartSession"]
     resources = [
       "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:instance/*",
-      "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:document/AWS-StartPortForwardingSessionToRemoteHost",
     ]
     condition {
       test     = "StringEquals"
       variable = "ssm:resourceTag/Purpose"
       values   = ["cicd-ssm-target"]
     }
+  }
+
+  statement {
+    sid       = "StartSessionToCicdSsmTargetDocument"
+    effect    = "Allow"
+    actions   = ["ssm:StartSession"]
+    resources = ["arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"] # AWS-owned public document - no account ID in its ARN, no tags to condition on
   }
 
   statement {
@@ -580,8 +619,12 @@ data "aws_iam_policy_document" "github_platform_bootstrap_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
+      # No GitHub Environment named "platform" exists - platform-addons.yml's jobs use
+      # environment: ${{ inputs.target_environment }} (staging/production), same as github_apply,
+      # so this must match those, not a "platform" environment that was never created.
       values = [
-        "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:platform",
+        "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:staging",
+        "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:production",
       ]
     }
   }
@@ -610,13 +653,15 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     resources = ["*"] # bulk-enumeration action, no resource-level scoping - same class as other unscoped Describe* actions in this policy
   }
 
+  # Split in two: the resourceTag condition only makes sense for the instance resource - an
+  # AWS-owned public document has no tags of ours, so sharing one condition across both resources
+  # in a single statement made the whole statement fail to match the document (implicit deny).
   statement {
-    sid     = "StartSessionToCicdSsmTarget"
+    sid     = "StartSessionToCicdSsmTargetInstance"
     effect  = "Allow"
     actions = ["ssm:StartSession"]
     resources = [
       "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:instance/*",
-      "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:document/AWS-StartPortForwardingSessionToRemoteHost",
     ]
     condition {
       test     = "StringEquals"
@@ -626,10 +671,150 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
   }
 
   statement {
+    sid       = "StartSessionToCicdSsmTargetDocument"
+    effect    = "Allow"
+    actions   = ["ssm:StartSession"]
+    resources = ["arn:aws:ssm:*::document/AWS-StartPortForwardingSessionToRemoteHost"] # AWS-owned public document - no account ID in its ARN, no tags to condition on
+  }
+
+  statement {
     sid       = "TerminateOwnSsmSession"
     effect    = "Allow"
     actions   = ["ssm:TerminateSession"]
     resources = ["arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:session/GitHubActions-*"]
+  }
+
+  # Platform-layer state lives at a dedicated key (envs/*/platform/backend.tf), separate from the
+  # infra-layer state the apply role owns - literal known keys, not a wildcard prefix, since this
+  # role should never be able to touch envs/*'s own terraform.tfstate.
+  statement {
+    sid    = "PlatformStateBucketList"
+    effect = "Allow"
+    actions = [
+      "s3:ListBucket",
+    ]
+    resources = [aws_s3_bucket.terraform_state.arn]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["aws/staging/platform/*", "aws/production/platform/*"]
+    }
+  }
+
+  statement {
+    sid    = "PlatformStateObjects"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = [
+      "${aws_s3_bucket.terraform_state.arn}/aws/staging/platform/terraform.tfstate",
+      "${aws_s3_bucket.terraform_state.arn}/aws/staging/platform/terraform.tfstate.tflock",
+      "${aws_s3_bucket.terraform_state.arn}/aws/production/platform/terraform.tfstate",
+      "${aws_s3_bucket.terraform_state.arn}/aws/production/platform/terraform.tfstate.tflock",
+    ]
+  }
+
+  # DNS module (terraform/aws/modules/dns) manages a single aws_route53_record. hosted_zone_id is
+  # an external prerequisite this project does not yet own (see the module's variables.tf) so the
+  # specific zone ARN can't be pinned here - scoped to the hostedzone resource type, not all of
+  # route53:*.
+  statement {
+    sid    = "DnsRecordManagement"
+    effect = "Allow"
+    actions = [
+      "route53:GetHostedZone",
+      "route53:ListResourceRecordSets",
+      "route53:ChangeResourceRecordSets",
+    ]
+    resources = ["arn:aws:route53:::hostedzone/*"]
+  }
+
+  statement {
+    sid       = "DnsChangePropagationStatus"
+    effect    = "Allow"
+    actions   = ["route53:GetChange"]
+    resources = ["arn:aws:route53:::change/*"] # change IDs are assigned by AWS at request time, unknowable ahead of time
+  }
+
+  # Observability module (terraform/aws/modules/observability) VPC Flow Logs -> CloudWatch Logs.
+  # aws_flow_log itself, scoped to the VPC being logged and the flow-log resource it creates.
+  statement {
+    sid    = "VpcFlowLogsLifecycle"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateFlowLogs",
+      "ec2:DeleteFlowLogs",
+    ]
+    resources = [
+      "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:vpc/*",
+      "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:vpc-flow-log/*",
+    ]
+  }
+
+  statement {
+    sid       = "VpcFlowLogsReadback"
+    effect    = "Allow"
+    actions   = ["ec2:DescribeFlowLogs"]
+    resources = ["*"] # this action does not support resource-level scoping
+  }
+
+  # Destination log group: /aws/vpc-flow-logs/cashonrails-aws-{environment}, module also tags it.
+  statement {
+    sid    = "VpcFlowLogsDestinationLogGroup"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:PutRetentionPolicy",
+      "logs:DeleteLogGroup",
+      "logs:TagResource",
+      "logs:ListTagsForResource",
+    ]
+    resources = ["arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/vpc-flow-logs/cashonrails-aws-*"]
+  }
+
+  statement {
+    sid       = "VpcFlowLogsLogGroupDiscovery"
+    effect    = "Allow"
+    actions   = ["logs:DescribeLogGroups"]
+    resources = ["*"] # this action does not support resource-level scoping (same class as LogsDescribeReadback on the apply role)
+  }
+
+  # Delivery role the module creates for the flow log to assume (cashonrails-aws-{environment}-vpc-flow-logs),
+  # plus its inline delivery policy. Scoped to that exact role-name pattern only.
+  statement {
+    sid    = "VpcFlowLogsDeliveryRoleLifecycle"
+    effect = "Allow"
+    actions = [
+      "iam:CreateRole",
+      "iam:DeleteRole",
+      "iam:GetRole",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:PutRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:ListRolePolicies",
+    ]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/cashonrails-aws-*-vpc-flow-logs"]
+  }
+
+  # ec2:CreateFlowLogs passes this role to the vpc-flow-logs service - PassRole is required for that,
+  # narrowed to only the flow-logs delivery role and only when passed to that specific service.
+  statement {
+    sid    = "PassFlowLogsDeliveryRole"
+    effect = "Allow"
+    actions = [
+      "iam:PassRole",
+    ]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/cashonrails-aws-*-vpc-flow-logs"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["vpc-flow-logs.amazonaws.com"]
+    }
   }
 }
 
