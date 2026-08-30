@@ -14,7 +14,9 @@ The platform was fully validated on AWS staging. Huawei Cloud was the target clo
 
 ![Architecture](docs/architecture/architecture.png)
 
-Private EKS cluster behind an AWS Network Load Balancer and ingress-nginx, TLS via cert-manager, private RDS PostgreSQL, and Argo CD reconciling the cluster against `deploy/`. The EKS API endpoint is private; administrative access is through AWS Systems Manager.
+The diagram above includes both what is deployed today and the intended production target. The AWS staging environment deployed and validated in this assessment is the functional-validation subset: a private EKS cluster behind a load balancer and ingress-nginx, TLS via cert-manager, private RDS PostgreSQL, and Argo CD reconciling the cluster against `deploy/`. The EKS API endpoint is private; administrative access is through AWS Systems Manager.
+
+Components shown but not currently deployed (CloudFront/S3 frontend, WAF, Terraform Cloud, CloudTrail, IAM Access Analyzer, a self-hosted secrets manager, and alerting to Slack/email) represent the intended production architecture and future hardening, not the current staging build.
 
 ## Infrastructure
 
