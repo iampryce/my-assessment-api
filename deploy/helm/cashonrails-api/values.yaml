@@ -49,11 +49,16 @@ resources:
     cpu: 500m
     memory: 256Mi
 
+# 82 = www-data's real UID/GID in the image - kubelet can't verify a named USER is non-root without it.
 podSecurityContext:
   runAsNonRoot: true
+  runAsUser: 82
+  runAsGroup: 82
 
 containerSecurityContext:
   runAsNonRoot: true
+  runAsUser: 82
+  runAsGroup: 82
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: false
 
