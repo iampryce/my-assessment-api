@@ -40,8 +40,21 @@ module "eks" {
   }
 
   addons = {
+    # Prefix delegation raises per-node pod density well above the default ENI/IP
+    # ceiling (17 pods on t3.medium) - needed so the full observability stack
+    # (Prometheus/Grafana/Loki/Alertmanager) plus system DaemonSets fit on 2
+    # small on-demand nodes without resizing or adding more of them. Free -
+    # just assigns /28 IP prefixes to ENIs instead of individual IPs.
+    # Existing nodes must be replaced to pick up the new kubelet --max-pods
+    # value, which is computed at bootstrap time.
     vpc-cni = {
       before_compute = true
+      configuration_values = jsonencode({
+        env = {
+          ENABLE_PREFIX_DELEGATION = "true"
+          WARM_PREFIX_TARGET       = "1"
+        }
+      })
     }
     kube-proxy = {}
     coredns    = {}
