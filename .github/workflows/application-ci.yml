@@ -141,11 +141,14 @@ jobs:
       - name: Verify kubectl connectivity
         run: kubectl get --raw='/healthz'
 
+      # The RDS-managed secret only holds username/password - it has no host field, so the
+      # endpoint has to come from RDS itself, not from jq'ing a key that was never there.
       - name: Sync DB credentials secret
         run: |
           SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "${{ vars.STAGING_DB_SECRET_ARN }}" --query SecretString --output text)
+          DB_HOST=$(aws rds describe-db-instances --db-instance-identifier cashonrails-aws-staging-rds --query 'DBInstances[0].Endpoint.Address' --output text)
           kubectl create secret generic app-db-credentials -n cashonrails \
-            --from-literal=DB_HOST="$(echo "$SECRET_JSON" | jq -r .host)" \
+            --from-literal=DB_HOST="$DB_HOST" \
             --from-literal=DB_USERNAME="$(echo "$SECRET_JSON" | jq -r .username)" \
             --from-literal=DB_PASSWORD="$(echo "$SECRET_JSON" | jq -r .password)" \
             --dry-run=client -o yaml | kubectl apply -f -
@@ -226,8 +229,9 @@ jobs:
       - name: Sync DB credentials secret
         run: |
           SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "${{ vars.PRODUCTION_DB_SECRET_ARN }}" --query SecretString --output text)
+          DB_HOST=$(aws rds describe-db-instances --db-instance-identifier cashonrails-aws-production-rds --query 'DBInstances[0].Endpoint.Address' --output text)
           kubectl create secret generic app-db-credentials -n cashonrails \
-            --from-literal=DB_HOST="$(echo "$SECRET_JSON" | jq -r .host)" \
+            --from-literal=DB_HOST="$DB_HOST" \
             --from-literal=DB_USERNAME="$(echo "$SECRET_JSON" | jq -r .username)" \
             --from-literal=DB_PASSWORD="$(echo "$SECRET_JSON" | jq -r .password)" \
             --dry-run=client -o yaml | kubectl apply -f -
