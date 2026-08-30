@@ -16,24 +16,19 @@ variable "acme_email" {
 }
 
 variable "enable_dns" {
-  description = <<-EOT
-    Whether to create the DNS record for this environment. Defaults to false: this project does
-    not currently own a delegated domain (see modules/dns). Set to true, and supply
-    dns_hosted_zone_id/dns_record_name, only once a real CashOnRails-owned zone exists - never
-    point this at an unrelated pre-existing zone in the account.
-  EOT
+  description = "Whether to create this environment's dedicated DNS zone + record. Defaults to false until dns_zone_name/dns_record_name point at a domain you actually control."
   type        = bool
   default     = false
 }
 
-variable "dns_hosted_zone_id" {
-  description = "Route53 hosted zone ID - required only if enable_dns is true."
+variable "dns_zone_name" {
+  description = "Subdomain to create a dedicated Route53 zone for, e.g. \"staging.cashonrails.example.com\" - required only if enable_dns is true."
   type        = string
   default     = ""
 }
 
 variable "dns_record_name" {
-  description = "Hostname to create, e.g. \"api.staging.<domain>\" - required only if enable_dns is true."
+  description = "Hostname to create inside the zone, e.g. \"api.staging.<domain>\" - required only if enable_dns is true."
   type        = string
   default     = ""
 }

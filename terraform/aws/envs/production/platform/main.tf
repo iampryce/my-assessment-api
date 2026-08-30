@@ -24,14 +24,13 @@ module "observability" {
   environment = "production"
 }
 
-# Deliberately not instantiated by default - see enable_dns. No CashOnRails-owned domain exists
-# yet; this is an external prerequisite (see the final report), not something to fake.
+# Deliberately not instantiated by default - see enable_dns. Creates its own dedicated zone.
 module "dns" {
   count  = var.enable_dns ? 1 : 0
   source = "../../../modules/dns"
 
   environment     = "production"
-  hosted_zone_id  = var.dns_hosted_zone_id
+  zone_name       = var.dns_zone_name
   record_name     = var.dns_record_name
   target_hostname = module.ingress_nginx.lb_hostname
 }
