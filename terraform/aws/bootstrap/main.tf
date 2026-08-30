@@ -544,6 +544,14 @@ data "aws_iam_policy_document" "github_app_cicd_custom" {
     resources = ["arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:rds!db-*"]
   }
 
+  # The RDS-managed secret above has no host field - the real endpoint has to come from RDS itself.
+  statement {
+    sid       = "ReadRdsEndpointForAppConfig"
+    effect    = "Allow"
+    actions   = ["rds:DescribeDBInstances"]
+    resources = ["arn:aws:rds:*:${data.aws_caller_identity.current.account_id}:db:cashonrails-aws-*"]
+  }
+
   statement {
     sid       = "DiscoverCicdSsmTarget"
     effect    = "Allow"
