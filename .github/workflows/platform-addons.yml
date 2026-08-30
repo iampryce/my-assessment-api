@@ -312,7 +312,8 @@ jobs:
   dns:
     name: DNS (only if a real domain has been supplied)
     needs: [check-prerequisites, cert-manager]
-    if: ${{ inputs.enable_dns == 'true' }}
+    # `== 'true'` alone misses the real-boolean case that comes through deploy-platform.yml's workflow_call.
+    if: ${{ inputs.enable_dns == true || inputs.enable_dns == 'true' }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.target_environment }}
     permissions:
