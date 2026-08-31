@@ -1,0 +1,22 @@
+version: 0.1
+
+projects:
+  - path: terraform/aws/envs/staging
+    name: staging-deployed
+    skip_autodetect: true
+
+  - path: terraform/aws/envs/production
+    name: production-not-deployed
+    skip_autodetect: true
+
+  - path: terraform/aws/envs/staging/platform
+    name: staging-platform-k8s-and-dns
+    skip_autodetect: true
+
+  - path: terraform/aws/envs/staging/admin-access
+    name: staging-admin-access-local-only
+    skip_autodetect: true
+
+  - path: terraform/aws/bootstrap
+    name: bootstrap-state-backend
+    skip_autodetect: true
