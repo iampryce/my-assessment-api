@@ -187,6 +187,42 @@ Production requires explicit GitHub Environment approval and was not deployed.
 - No disaster-recovery drill was performed.
 - A separate detailed data-residency document is not currently included in the repository.
 
+## Cost
+
+Approximate AWS on-demand list pricing, `us-east-1`, based on what's actually deployed for staging (not estimated from the Terraform code - confirmed against the live account).
+
+| Resource | Spec | ~Monthly (running) |
+|---|---|---|
+| EKS control plane | 1 cluster | $73.00 |
+| EKS worker nodes | 2x `t3.medium` on-demand | $60.75 |
+| Node root volumes | 2x 20GB gp3 | $3.20 |
+| RDS | `db.t3.micro`, single-AZ, 20GB | $14.70 |
+| NAT Gateway | 1x + data processing | ~$33.30 |
+| Network Load Balancer | 1x, internet-facing | ~$20.00 |
+| CI/CD SSM bastion | 1x `t3.micro` (no workload, always-on) | $7.60 |
+| KMS key | EKS envelope encryption | $1.00 |
+| Secrets Manager | 1 secret (RDS managed password) | $0.40 |
+| Route 53 hosted zone | 1 zone | $0.50 |
+| ECR + S3 (state) + CloudWatch Logs | small assessment-scale volume | ~$3-5 |
+| **Total, running continuously** | | **~$215-220/month** |
+
+**Cost-conscious choices already made:**
+- Smallest practical instance sizes throughout (`t3.medium` nodes, `t3.micro` bastion, `db.t3.micro` RDS) - this is a validation environment, not sized for production load.
+- Single NAT Gateway (not one per AZ) - a real availability trade-off, acceptable here because staging tolerates a single point of failure the production design would not.
+- RDS single-AZ, 1-day backup retention - same trade-off, deliberately not production-grade.
+- VPC CNI prefix delegation enabled instead of bigger/more nodes to fit the full observability stack (see Known Limitations) - free, avoids paying for more compute just to raise pod density.
+- Grafana/Prometheus/Loki have persistence disabled (`persistence.enabled = false`) - no EBS volumes for metrics/log storage, short retention windows instead. Acceptable for a validation environment; would need persistent storage in production.
+- The entire environment can be paused without destroying anything: scale the node group to 0 and `rds stop-db-instance` cuts running cost to roughly the EKS control plane + NAT Gateway + bastion + ancillary services (~$115-120/month baseline), with the app itself back within ~10 minutes. See the live-demo runbook for the exact commands.
+
+**What we'd reconsider at larger/production scale:**
+- NAT Gateway per AZ for real HA (multiplies that line item, but removes a single point of failure).
+- RDS Multi-AZ and longer backup retention (doubles RDS compute cost, buys real failover).
+- Reserved Instances / Savings Plans or Karpenter+Spot for worker nodes once load is predictable, instead of on-demand `t3.medium`.
+- Persistent storage + longer retention for Prometheus/Loki once this is more than a validation environment.
+- S3 + lifecycle policies for log archival instead of CloudWatch Logs at scale (CloudWatch ingestion cost grows fast with volume).
+
+**Huawei Cloud (the actual target platform):** cost was not verified against a live account - activation was blocked by a payment-method issue for the entire assessment window (see AWS staging remediation notes). The same design principles above (small dev-tier flavors, single NAT/EIP equivalent, pause-when-idle, no persistent observability storage) apply directly to the Huawei Terraform scaffolding, but real Huawei pricing (CCE cluster fee, ECS flavors, RDS, NAT gateway/EIP) has not been priced against their console - flagged here rather than guessed.
+
 ## Production Improvements
 
 - Apply the Huawei Cloud Terraform once account activation is available.
