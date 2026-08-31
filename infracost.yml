@@ -1,12 +1,14 @@
 version: 0.1
 
+# Only projects that are actually deployed. "production" is deliberately
+# excluded - it's real Terraform code but has never been applied (see
+# README Known Limitations), so pricing it would misrepresent what's
+# actually running and being billed for. Run infracost against
+# terraform/aws/envs/production directly (no config file) if you ever need
+# a hypothetical production estimate - it should never be in this total.
 projects:
   - path: terraform/aws/envs/staging
     name: staging-deployed
-    skip_autodetect: true
-
-  - path: terraform/aws/envs/production
-    name: production-not-deployed
     skip_autodetect: true
 
   - path: terraform/aws/envs/staging/platform
