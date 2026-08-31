@@ -41,3 +41,4 @@ terraform/**/terraform.tfvars
 terraform/**/*.auto.tfvars
 terraform/**/backend.hcl
 terraform/**/.infracost/
+/.infracost/
