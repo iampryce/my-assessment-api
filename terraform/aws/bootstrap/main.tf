@@ -341,6 +341,21 @@ data "aws_iam_policy_document" "github_apply_custom" {
     resources = ["*"] # bulk/filterable Describe action, same class as DescribeInstanceTypes - reads the instance's root_block_device
   }
 
+  # Never needed until the destroy pipeline first ran (confirmed via a real UnauthorizedOperation)
+  # - this role only ever applied before that. Tag-scoped the same way platform-bootstrap's
+  # StartSessionToCicdSsmTargetInstance is, so this can't terminate anything else in the account.
+  statement {
+    sid       = "TerminateCicdSsmTargetInstance"
+    effect    = "Allow"
+    actions   = ["ec2:TerminateInstances"]
+    resources = ["arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:instance/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/Purpose"
+      values   = ["cicd-ssm-target"]
+    }
+  }
+
   statement {
     sid    = "Ec2LaunchTemplateCreate"
     effect = "Allow"
