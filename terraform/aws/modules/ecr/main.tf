@@ -5,6 +5,10 @@ locals {
 resource "aws_ecr_repository" "this" {
   name                 = local.name
   image_tag_mutability = "IMMUTABLE"
+  # Without this, destroy fails with RepositoryNotEmptyException the moment any image has ever
+  # been pushed (confirmed via a real destroy run) - source is always recoverable from git/CI, so
+  # there's nothing here worth blocking a teardown over.
+  force_delete = true
 
   image_scanning_configuration {
     scan_on_push = true
