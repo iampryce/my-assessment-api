@@ -97,11 +97,26 @@ resource "helm_release" "kube_prometheus_stack" {
         global = {
           slack_api_url_file = "/etc/alertmanager/secrets/${kubernetes_secret_v1.alertmanager_slack[0].metadata[0].name}/webhook-url"
         }
+        # route.routes and receivers are both lists - Helm's values merge replaces lists wholesale
+        # rather than merging them, so both must be fully self-contained here. Confirmed live: an
+        # earlier version that omitted "routes" kept the chart's default Watchdog sub-route (which
+        # still pointed at "null"), while replacing "receivers" dropped the "null" receiver
+        # definition it depended on, producing "undefined receiver \"null\" used in route" and
+        # silently breaking the operator's reconcile of the whole Alertmanager object.
         route = {
           receiver = "slack"
           group_by = ["alertname", "severity"]
+          routes = [
+            {
+              receiver = "null"
+              matchers = ["alertname = \"Watchdog\""]
+            }
+          ]
         }
         receivers = [
+          {
+            name = "null"
+          },
           {
             name = "slack"
             slack_configs = [
