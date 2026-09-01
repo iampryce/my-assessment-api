@@ -745,6 +745,22 @@ data "aws_iam_policy_document" "github_platform_bootstrap_custom" {
     resources = ["arn:aws:route53:::change/*"] # change IDs are assigned by AWS at request time, unknowable ahead of time
   }
 
+  # ACM cert (modules/acm) for the shared NLB's TLS listener - the certificate ID doesn't exist yet
+  # at RequestCertificate time, so scoped to the resource type via wildcard (same class as
+  # DnsZoneLifecycle/CreateHostedZone above, just narrower since ACM does support this much scoping).
+  statement {
+    sid    = "AcmCertificateLifecycle"
+    effect = "Allow"
+    actions = [
+      "acm:RequestCertificate",
+      "acm:DescribeCertificate",
+      "acm:DeleteCertificate",
+      "acm:AddTagsToCertificate",
+      "acm:ListTagsForCertificate",
+    ]
+    resources = ["arn:aws:acm:*:${data.aws_caller_identity.current.account_id}:certificate/*"]
+  }
+
   # Observability module's own tag-based VPC lookup (data "aws_vpc" "this").
   statement {
     sid       = "VpcDiscoveryForObservability"
