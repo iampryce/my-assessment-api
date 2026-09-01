@@ -175,6 +175,23 @@ jobs:
           git commit -m "deploy(staging): ${{ github.sha }} [skip ci]"
           git push origin HEAD:main
 
+      # Reports this job's own status - a failure in an earlier job (test/docker/push-staging)
+      # never reaches here, so it never fires a notification either.
+      - name: Notify Slack
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not set, skipping notification"
+            exit 0
+          fi
+          STATUS="${{ job.status }}"
+          COLOR="good"; [ "$STATUS" = "success" ] || COLOR="danger"
+          curl -sS -X POST -H 'Content-type: application/json' \
+            --data "{\"attachments\":[{\"color\":\"$COLOR\",\"text\":\"*Staging deploy: ${STATUS}* — <https://github.com/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}> by ${{ github.actor }}\"}]}" \
+            "$SLACK_WEBHOOK_URL"
+
   deploy-production:
     name: Deploy to production
     needs: [deploy-staging, push-staging]
