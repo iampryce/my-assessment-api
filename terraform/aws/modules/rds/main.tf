@@ -10,8 +10,8 @@ resource "aws_security_group" "rds" {
 
   ingress {
     description     = "PostgreSQL from EKS nodes"
-    from_port       = 5432
-    to_port         = 5432
+    from_port       = var.db_port
+    to_port         = var.db_port
     protocol        = "tcp"
     security_groups = [var.node_security_group_id]
   }
@@ -35,6 +35,8 @@ module "rds" {
   family         = local.parameter_group_family
 
   allocated_storage = var.allocated_storage
+
+  port = var.db_port
 
   db_name  = "cashonrails"
   username = "cashonrails_admin"

@@ -73,3 +73,16 @@ variable "ingress_class_name" {
   type        = string
   default     = "nginx"
 }
+
+variable "slack_webhook_url" {
+  description = "Slack Incoming Webhook URL for Alertmanager notifications. Leave empty to skip wiring Slack alerting entirely."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "slack_channel" {
+  description = "Slack channel Alertmanager posts to - required only if slack_webhook_url is set."
+  type        = string
+  default     = "#alerts"
+}

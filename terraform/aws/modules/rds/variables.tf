@@ -19,8 +19,14 @@ variable "subnet_ids" {
 }
 
 variable "node_security_group_id" {
-  description = "EKS node security group ID — pass module.eks.node_security_group_id. RDS ingress is restricted to this security group on 5432 only."
+  description = "EKS node security group ID — pass module.eks.node_security_group_id. RDS ingress is restricted to this security group on var.db_port only."
   type        = string
+}
+
+variable "db_port" {
+  description = "PostgreSQL listener port. Deliberately off the 5432 default to cut down on automated scanner/bot noise — not a substitute for the security group restriction, which is the real control."
+  type        = number
+  default     = 15432
 }
 
 variable "engine_version" {

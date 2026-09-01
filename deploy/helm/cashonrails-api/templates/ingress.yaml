@@ -7,13 +7,21 @@ metadata:
   labels:
     {{- include "cashonrails-api.labels" . | nindent 4 }}
   annotations:
-    cert-manager.io/cluster-issuer: {{ required "ingress.clusterIssuer is required when ingress.enabled is true" .Values.ingress.clusterIssuer }}
+    {{- if .Values.ingress.acmTlsTermination }}
+    # The shared NLB already terminated TLS with an ACM cert - nginx only ever sees plain HTTP
+    # here, so it must not try to redirect it back to HTTPS.
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    {{- else }}
+    cert-manager.io/cluster-issuer: {{ required "ingress.clusterIssuer is required when ingress.enabled is true and ingress.acmTlsTermination is false" .Values.ingress.clusterIssuer }}
+    {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
+  {{- if not .Values.ingress.acmTlsTermination }}
   tls:
     - hosts:
         - {{ required "ingress.host is required when ingress.enabled is true" .Values.ingress.host }}
       secretName: cashonrails-api-tls
+  {{- end }}
   rules:
     - host: {{ required "ingress.host is required when ingress.enabled is true" .Values.ingress.host }}
       http:

@@ -7,10 +7,22 @@ module "argocd" {
   cluster_issuer_name = var.enable_admin_ingress ? module.cert_manager.cluster_issuer_name : ""
 }
 
+# Only exists once a real delegated zone exists (enable_dns) - one wildcard cert here replaces
+# per-Ingress cert-manager Certificates for every hostname behind the shared NLB.
+module "acm" {
+  count  = var.enable_dns ? 1 : 0
+  source = "../../../modules/acm"
+
+  environment = "staging"
+  zone_id     = module.dns[0].zone_id
+  domain_name = var.dns_zone_name
+}
+
 module "ingress_nginx" {
   source = "../../../modules/ingress-nginx"
 
-  environment = "staging"
+  environment     = "staging"
+  certificate_arn = var.enable_dns ? module.acm[0].certificate_arn : ""
 }
 
 module "cert_manager" {
@@ -28,6 +40,8 @@ module "observability" {
   enable_ingress      = var.enable_admin_ingress
   ingress_host        = var.enable_admin_ingress ? "grafana.${var.dns_zone_name}" : ""
   cluster_issuer_name = var.enable_admin_ingress ? module.cert_manager.cluster_issuer_name : ""
+  slack_webhook_url   = var.slack_webhook_url
+  slack_channel       = var.slack_channel
 }
 
 # Deliberately not instantiated by default - see enable_dns. Creates its own dedicated zone.

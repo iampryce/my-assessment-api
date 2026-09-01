@@ -38,3 +38,16 @@ variable "enable_admin_ingress" {
   type        = bool
   default     = false
 }
+
+variable "slack_webhook_url" {
+  description = "Slack Incoming Webhook URL for Alertmanager notifications. Leave empty to skip Slack alerting."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "slack_channel" {
+  description = "Slack channel Alertmanager posts to - required only if slack_webhook_url is set."
+  type        = string
+  default     = "#alerts-staging"
+}

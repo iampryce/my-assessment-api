@@ -26,6 +26,9 @@ ingress:
   className: nginx
   clusterIssuer: ""
   host: ""
+  # true once the shared NLB terminates TLS with an ACM cert (see terraform/aws/modules/acm) -
+  # skips the cert-manager annotation/tls block, since nginx then only ever sees plain HTTP.
+  acmTlsTermination: false
 
 probes:
   liveness:
@@ -67,7 +70,7 @@ config:
   APP_DEBUG: "false"
   LOG_CHANNEL: "stderr"
   DB_CONNECTION: "pgsql"
-  DB_PORT: "5432"
+  DB_PORT: "15432" # off the 5432 default - see terraform/aws/modules/rds's db_port
   DB_DATABASE: "cashonrails"
 
 secretRefs:

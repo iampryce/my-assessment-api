@@ -36,7 +36,7 @@ resource "helm_release" "this" {
   version    = var.chart_version
   namespace  = kubernetes_namespace_v1.this.metadata[0].name
 
-  set = [
+  set = concat([
     {
       name  = "controller.service.type"
       value = "LoadBalancer"
@@ -65,5 +65,19 @@ resource "helm_release" "this" {
       name  = "controller.ingressClassResource.default"
       value = "true"
     },
-  ]
+    ],
+    # NLB terminates TLS itself with this ACM cert when set - traffic then reaches nginx as plain
+    # HTTP, so any Ingress relying on it must drop its cert-manager annotation/tls block (see
+    # deploy/helm/cashonrails-api's ingress.acmTlsTermination).
+    var.certificate_arn != "" ? [
+      {
+        name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-ssl-cert"
+        value = var.certificate_arn
+      },
+      {
+        name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-ssl-ports"
+        value = "443"
+      },
+    ] : []
+  )
 }
