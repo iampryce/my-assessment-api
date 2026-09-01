@@ -7,6 +7,31 @@ locals {
   platform_bootstrap_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/cashonrails-github-actions-platform-bootstrap"
 }
 
+# EKS's in-tree cloud provider runs on the managed control plane under the cluster's own service
+# role (not the node role, not any GitHub Actions role) - AmazonEKSClusterPolicy covers enough to
+# provision a new LoadBalancer Service, but not to modify an existing listener to attach a cert.
+# Scoped to NLB listeners account-wide since the specific ARN doesn't exist until Kubernetes
+# creates the Service - same class of constraint as bootstrap's AcmCertificateLifecycle statement.
+data "aws_iam_policy_document" "nlb_listener_certificate" {
+  statement {
+    sid    = "NlbListenerCertificateManagement"
+    effect = "Allow"
+    actions = [
+      "elasticloadbalancing:DescribeListeners",
+      "elasticloadbalancing:DescribeListenerCertificates",
+      "elasticloadbalancing:ModifyListener",
+      "elasticloadbalancing:AddListenerCertificates",
+      "elasticloadbalancing:RemoveListenerCertificates",
+    ]
+    resources = ["arn:aws:elasticloadbalancing:*:${data.aws_caller_identity.current.account_id}:listener/net/*/*/*"]
+  }
+}
+
+resource "aws_iam_policy" "nlb_listener_certificate" {
+  name   = "${local.name}-nlb-listener-certificate"
+  policy = data.aws_iam_policy_document.nlb_listener_certificate.json
+}
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 21.0"
@@ -27,6 +52,12 @@ module "eks" {
   # apply role makes this deterministic; it does not change who is administrator today (this is
   # already the live value) and does not add or remove any permissions.
   kms_key_administrators = [local.apply_role_arn]
+
+  # Lets the in-tree cloud provider (running as the cluster's own role) attach the ACM cert to the
+  # ingress-nginx NLB's listener - see aws_iam_policy.nlb_listener_certificate above.
+  iam_role_additional_policies = {
+    NlbListenerCertificateManagement = aws_iam_policy.nlb_listener_certificate.arn
+  }
 
   # Lets the CI/CD SSM deployment bridge reach the private API on 443 - the only way this pipeline can deploy without a public endpoint.
   security_group_additional_rules = {
