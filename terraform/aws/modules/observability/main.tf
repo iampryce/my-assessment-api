@@ -43,6 +43,21 @@ resource "kubernetes_namespace_v1" "this" {
   }
 }
 
+# Webhook lives in a Secret, never in Helm values/state as plaintext - Alertmanager reads it via
+# slack_api_url_file, mounted from this Secret below.
+resource "kubernetes_secret_v1" "alertmanager_slack" {
+  count = var.slack_webhook_url != "" ? 1 : 0
+
+  metadata {
+    name      = "alertmanager-slack"
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
+  }
+
+  data = {
+    "webhook-url" = var.slack_webhook_url
+  }
+}
+
 # No persistent volumes, short retention - cost-conscious tradeoff for a validation environment.
 resource "helm_release" "kube_prometheus_stack" {
   name       = "kube-prometheus-stack"
@@ -70,6 +85,38 @@ resource "helm_release" "kube_prometheus_stack" {
     },
     # Grafana admin password: chart auto-generates it into a Secret, never set here.
   ]
+
+  # Routes every firing/resolved alert to Slack. Only wired up once a webhook Secret actually
+  # exists, so the chart's default receiver stays in place until slack_webhook_url is set.
+  values = var.slack_webhook_url != "" ? [yamlencode({
+    alertmanager = {
+      alertmanagerSpec = {
+        secrets = [kubernetes_secret_v1.alertmanager_slack[0].metadata[0].name]
+      }
+      config = {
+        global = {
+          slack_api_url_file = "/etc/alertmanager/secrets/${kubernetes_secret_v1.alertmanager_slack[0].metadata[0].name}/webhook-url"
+        }
+        route = {
+          receiver = "slack"
+          group_by = ["alertname", "severity"]
+        }
+        receivers = [
+          {
+            name = "slack"
+            slack_configs = [
+              {
+                channel       = var.slack_channel
+                send_resolved = true
+                title         = "{{ .CommonAnnotations.summary | default .CommonLabels.alertname }}"
+                text          = "{{ .CommonAnnotations.description }}"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  })] : []
 }
 
 resource "helm_release" "loki_stack" {
@@ -213,20 +260,30 @@ resource "kubernetes_ingress_v1" "grafana" {
   metadata {
     name      = "grafana"
     namespace = kubernetes_namespace_v1.this.metadata[0].name
-    annotations = {
-      "cert-manager.io/cluster-issuer"               = var.cluster_issuer_name
-      "nginx.ingress.kubernetes.io/auth-type"        = "basic"
-      "nginx.ingress.kubernetes.io/auth-secret"      = kubernetes_secret_v1.grafana_basic_auth[0].metadata[0].name
-      "nginx.ingress.kubernetes.io/auth-secret-type" = "auth-file"
-    }
+    annotations = merge(
+      var.acm_tls_termination ? {
+        # NLB already terminated TLS with an ACM cert - nginx sees plain HTTP, don't redirect it back to HTTPS.
+        "nginx.ingress.kubernetes.io/ssl-redirect" = "false"
+        } : {
+        "cert-manager.io/cluster-issuer" = var.cluster_issuer_name
+      },
+      {
+        "nginx.ingress.kubernetes.io/auth-type"        = "basic"
+        "nginx.ingress.kubernetes.io/auth-secret"      = kubernetes_secret_v1.grafana_basic_auth[0].metadata[0].name
+        "nginx.ingress.kubernetes.io/auth-secret-type" = "auth-file"
+      }
+    )
   }
 
   spec {
     ingress_class_name = var.ingress_class_name
 
-    tls {
-      hosts       = [var.ingress_host]
-      secret_name = "grafana-ingress-tls"
+    dynamic "tls" {
+      for_each = var.acm_tls_termination ? [] : [1]
+      content {
+        hosts       = [var.ingress_host]
+        secret_name = "grafana-ingress-tls"
+      }
     }
 
     rule {

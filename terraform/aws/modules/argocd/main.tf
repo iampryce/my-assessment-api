@@ -103,21 +103,33 @@ resource "kubernetes_ingress_v1" "this" {
   metadata {
     name      = "argocd-server"
     namespace = kubernetes_namespace_v1.this.metadata[0].name
-    annotations = {
-      "cert-manager.io/cluster-issuer"               = var.cluster_issuer_name
-      "nginx.ingress.kubernetes.io/auth-type"        = "basic"
-      "nginx.ingress.kubernetes.io/auth-secret"      = kubernetes_secret_v1.basic_auth[0].metadata[0].name
-      "nginx.ingress.kubernetes.io/auth-secret-type" = "auth-file"
-      "nginx.ingress.kubernetes.io/backend-protocol" = "HTTPS"
-    }
+    annotations = merge(
+      var.acm_tls_termination ? {
+        # NLB already terminated the public-facing TLS with an ACM cert - nginx sees plain HTTP on
+        # its client side, don't redirect it back to HTTPS. Unrelated to backend-protocol below,
+        # which is nginx's own connection to argocd-server, still over HTTPS either way.
+        "nginx.ingress.kubernetes.io/ssl-redirect" = "false"
+        } : {
+        "cert-manager.io/cluster-issuer" = var.cluster_issuer_name
+      },
+      {
+        "nginx.ingress.kubernetes.io/auth-type"        = "basic"
+        "nginx.ingress.kubernetes.io/auth-secret"      = kubernetes_secret_v1.basic_auth[0].metadata[0].name
+        "nginx.ingress.kubernetes.io/auth-secret-type" = "auth-file"
+        "nginx.ingress.kubernetes.io/backend-protocol" = "HTTPS"
+      }
+    )
   }
 
   spec {
     ingress_class_name = var.ingress_class_name
 
-    tls {
-      hosts       = [var.ingress_host]
-      secret_name = "argocd-ingress-tls"
+    dynamic "tls" {
+      for_each = var.acm_tls_termination ? [] : [1]
+      content {
+        hosts       = [var.ingress_host]
+        secret_name = "argocd-ingress-tls"
+      }
     }
 
     rule {

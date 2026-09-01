@@ -81,6 +81,12 @@ variable "rds_backup_retention_period" {
   default     = 1
 }
 
+variable "rds_port" {
+  description = "PostgreSQL listener port. Off the 5432 default — must match deploy/helm/cashonrails-api/values.yaml's DB_PORT."
+  type        = number
+  default     = 15432
+}
+
 variable "cicd_ssm_target_ami_id" {
   description = "Amazon Linux 2023 x86_64 AMI ID for the CI/CD SSM deployment bridge. A recent AMI is set as a default; confirm it is still current at apply time with: aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 --query Parameter.Value --output text --region us-east-1"
   type        = string

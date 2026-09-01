@@ -52,6 +52,7 @@ module "rds" {
   engine_version    = var.rds_engine_version
   instance_class    = var.rds_instance_class
   allocated_storage = var.rds_allocated_storage
+  db_port           = var.rds_port
 
   multi_az                = var.rds_multi_az
   backup_retention_period = var.rds_backup_retention_period

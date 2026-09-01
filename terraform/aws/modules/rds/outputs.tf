@@ -4,6 +4,6 @@ output "endpoint" {
 }
 
 output "security_group_id" {
-  description = "Security group ID for RDS — ingress from EKS nodes on 5432 only."
+  description = "Security group ID for RDS — ingress from EKS nodes on var.db_port only."
   value       = aws_security_group.rds.id
 }

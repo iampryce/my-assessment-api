@@ -12,5 +12,7 @@ config:
 
 ingress:
   enabled: true
-  clusterIssuer: letsencrypt-staging
   host: api.staging.cashonrails.rivetrecords.online
+  # NLB terminates TLS with an ACM cert now - Let's Encrypt/cert-manager's HTTP-01 challenge was
+  # unreliable here (see terraform/aws/modules/acm, terraform/aws/modules/ingress-nginx).
+  acmTlsTermination: true
