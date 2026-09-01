@@ -5,6 +5,7 @@ module "argocd" {
   enable_ingress      = var.enable_admin_ingress
   ingress_host        = var.enable_admin_ingress ? "argocd.${var.dns_zone_name}" : ""
   cluster_issuer_name = var.enable_admin_ingress ? module.cert_manager.cluster_issuer_name : ""
+  acm_tls_termination = var.enable_dns
 }
 
 # Only exists once a real delegated zone exists (enable_dns) - one wildcard cert here replaces
@@ -40,6 +41,7 @@ module "observability" {
   enable_ingress      = var.enable_admin_ingress
   ingress_host        = var.enable_admin_ingress ? "grafana.${var.dns_zone_name}" : ""
   cluster_issuer_name = var.enable_admin_ingress ? module.cert_manager.cluster_issuer_name : ""
+  acm_tls_termination = var.enable_dns
   slack_webhook_url   = var.slack_webhook_url
   slack_channel       = var.slack_channel
 }

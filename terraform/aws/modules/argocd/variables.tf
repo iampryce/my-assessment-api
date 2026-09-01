@@ -33,9 +33,15 @@ variable "ingress_host" {
 }
 
 variable "cluster_issuer_name" {
-  description = "cert-manager ClusterIssuer name for the Ingress TLS - required only if enable_ingress is true."
+  description = "cert-manager ClusterIssuer name for the Ingress TLS - required only if enable_ingress is true and acm_tls_termination is false."
   type        = string
   default     = ""
+}
+
+variable "acm_tls_termination" {
+  description = "true once the shared NLB terminates TLS with an ACM cert (see modules/acm) - skips the cert-manager annotation/tls block on this Ingress, since nginx then only ever sees plain HTTP."
+  type        = bool
+  default     = false
 }
 
 variable "ingress_class_name" {

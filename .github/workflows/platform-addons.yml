@@ -126,6 +126,8 @@ jobs:
             -var="enable_admin_ingress=${{ inputs.enable_admin_ingress }}" \
             -var="dns_zone_name=${{ vars.DNS_ZONE_NAME }}"
 
+      # enable_dns=true is needed here too now: argocd's Ingress reads acm_tls_termination, which
+      # is just var.enable_dns passed straight through (see envs/*/platform/main.tf).
       - name: terraform apply (Argo CD - Application)
         working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
         run: |
@@ -133,7 +135,8 @@ jobs:
             -target='module.argocd' \
             -var="acme_email=${{ secrets.ACME_EMAIL }}" \
             -var="enable_admin_ingress=${{ inputs.enable_admin_ingress }}" \
-            -var="dns_zone_name=${{ vars.DNS_ZONE_NAME }}"
+            -var="dns_zone_name=${{ vars.DNS_ZONE_NAME }}" \
+            -var="enable_dns=true"
 
       - name: Close SSM tunnel
         if: always()
@@ -244,6 +247,8 @@ jobs:
         working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
         run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
 
+      # enable_dns=true is needed here too: Grafana's Ingress reads acm_tls_termination, which is
+      # just var.enable_dns passed straight through (see envs/*/platform/main.tf).
       - name: terraform apply (observability only)
         working-directory: terraform/aws/envs/${{ inputs.target_environment }}/platform
         run: |
@@ -252,7 +257,8 @@ jobs:
             -var="acme_email=${{ secrets.ACME_EMAIL }}" \
             -var="enable_admin_ingress=${{ inputs.enable_admin_ingress }}" \
             -var="dns_zone_name=${{ vars.DNS_ZONE_NAME }}" \
-            -var="slack_webhook_url=${{ secrets.SLACK_WEBHOOK_URL }}"
+            -var="slack_webhook_url=${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -var="enable_dns=true"
 
       - name: Close SSM tunnel
         if: always()
