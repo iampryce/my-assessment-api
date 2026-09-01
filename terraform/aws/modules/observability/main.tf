@@ -123,8 +123,11 @@ resource "helm_release" "kube_prometheus_stack" {
               {
                 channel       = var.slack_channel
                 send_resolved = true
-                title         = "{{ .CommonAnnotations.summary | default .CommonLabels.alertname }}"
-                text          = "{{ .CommonAnnotations.description }}"
+                # "default" is a Sprig function (Helm templates), not available in Alertmanager's
+                # plain Go text/template engine - confirmed live via "function \"default\" not
+                # defined" notify errors. Use built-in if/else instead.
+                title = "{{ if .CommonAnnotations.summary }}{{ .CommonAnnotations.summary }}{{ else }}{{ .CommonLabels.alertname }}{{ end }}"
+                text  = "{{ .CommonAnnotations.description }}"
               }
             ]
           }
