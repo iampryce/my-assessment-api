@@ -1,21 +1,26 @@
 # Trivy vulnerability exceptions
 #
-# Scope: these four findings ONLY. Any other HIGH/CRITICAL finding still fails the
+# Scope: these five findings ONLY. Any other HIGH/CRITICAL finding still fails the
 # "Docker build + scan" job in .github/workflows/application-ci.yml.
 #
-# All four are transitive Go dependencies compiled into the upstream FrankenPHP
-# binary (usr/local/bin/frankenphp) via Caddy's certmagic/smallstep (ACME CA) and
-# OpenTelemetry OTLP exporter chains — not Laravel/Composer application dependencies,
-# and not something this repo's Dockerfile/Caddy config can patch directly.
+# All five are transitive Go dependencies compiled into the upstream FrankenPHP
+# binary (usr/local/bin/frankenphp) via Caddy's certmagic/smallstep (ACME CA),
+# OpenTelemetry OTLP exporter, and golang.org/x/crypto/ssh chains — not
+# Laravel/Composer application dependencies, and not something this repo's
+# Dockerfile/Caddy config can patch directly.
 #
-# Investigated 2026-08-29: no patched FrankenPHP release exists yet. Checked both the
-# latest release (v1.12.7, 2026-08-07) and the unreleased `main` branch — both still
-# pin github.com/getkin/kin-openapi v0.140.0 and google.golang.org/grpc v1.81.1.
+# Investigated 2026-08-29 (kin-openapi/grpc-go) and 2026-09-01 (x/crypto/ssh): no
+# patched FrankenPHP release exists yet for either. Checked both the latest release
+# (v1.12.7, 2026-08-07) and the unreleased `main` branch — both still pin
+# github.com/getkin/kin-openapi v0.140.0, google.golang.org/grpc v1.81.1, and
+# golang.org/x/crypto v0.54.0. dunglas/frankenphp:1-php8.4-alpine is a floating tag,
+# so there's no newer image to bump to either.
 #
 # Reachability: this deployment runs `frankenphp php-server` with no custom Caddyfile
-# and no OTLP/ACME/xDS/gRPC configuration anywhere in deploy/ or scripts/ (TLS is
+# and no OTLP/ACME/xDS/gRPC/SSH configuration anywhere in deploy/ or scripts/ (TLS is
 # terminated by ingress-nginx, not Caddy). The vulnerable code paths are compiled in
-# but not invoked by this application.
+# but not invoked by this application - CVE-2026-56854 specifically is an SSH
+# *server* auth bypass, and this image never starts an SSH listener.
 #
 # Review by: 2026-09-28 (30 days). Re-run `docker build` + Trivy against the latest
 # dunglas/frankenphp:1-php8.4-alpine on or before this date; remove any entry once a
@@ -32,3 +37,6 @@ CVE-2026-77354 exp:2026-09-28
 
 # grpc-go: xDS RBAC and HTTP/2 vulnerabilities (fixed upstream in 1.82.1)
 GHSA-hrxh-6v49-42gf exp:2026-09-28
+
+# golang.org/x/crypto/ssh: auth bypass via unenforced source-address restrictions (fixed upstream in 0.55.0)
+CVE-2026-56854 exp:2026-09-28
